@@ -32,7 +32,7 @@ TARBALL="/tmp/${REPO_NAME}.tar.gz"
 git archive --prefix="$REPO_NAME/" HEAD | gzip > "$TARBALL"
 
 echo "Copying to VM..."
-scp -i "$SSH_KEY" "$TARBALL" "$VM_HOST:/tmp/
+scp -i "$SSH_KEY" "$TARBALL" "$VM_HOST:/tmp/"
 
 echo "Extracting on VM..."
 ssh -i "$SSH_KEY" "$VM_HOST" "
