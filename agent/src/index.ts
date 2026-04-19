@@ -202,7 +202,7 @@ async function createA2AServer(
         jsonrpc: "2.0",
         id: body.id,
         result: {
-          message: responseText,
+          message: { role: "agent", parts: [{ type: "text", text: responseText }] },
           sessionId: `session-${body.id}`,
         },
       };
