@@ -35,6 +35,7 @@ func runDelegate(cmd *cobra.Command, args []string) error {
 	var agentID string
 	var agentURL string
 	var prompt string
+	var err error
 
 	if delegateSkill != "" {
 		// Skill-based delegation: only prompt argument expected
@@ -177,26 +178,6 @@ func pollTask(ctx context.Context, client *a2a.Client, taskID string) error {
 			}
 		}
 	}
-}
-
-// getAgentsFromSupervisor queries the supervisor registry for all agents
-func getAgentsFromSupervisor() ([]map[string]interface{}, error) {
-	resp, err := http.Get(supervisorHTTP + "/registry/list")
-	if err != nil {
-		return nil, fmt.Errorf("connecting to supervisor: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("supervisor returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-	return result, nil
 }
 
 // discoverAgentBySkill queries the supervisor's discover endpoint for agents with a skill
