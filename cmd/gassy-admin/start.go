@@ -107,7 +107,7 @@ func startSupervisor() error {
 		"--label", "gassy=true",
 		"--network=host",
 		"--env-file", envFile,
-		"gassy-agent:latest",
+		"localhost:5000/gassy/agent:latest",
 		"supervisor",
 	}
 	cmd := exec.Command("podman", args...)
@@ -130,7 +130,7 @@ func startAgentContainer(agent city.AgentConfig, supervisorPort string) error {
 		"-e", fmt.Sprintf("PORT=%d", port),
 		"-e", "SUPERVISOR_URL=http://127.0.0.1:"+supervisorPort,
 		"--env-file", envFile,
-		"gassy-agent:latest",
+		"localhost:5000/gassy/agent:latest",
 	}
 
 	cmd := exec.Command("podman", args...)
