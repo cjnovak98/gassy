@@ -508,6 +508,7 @@ func (s *Supervisor) hireAgent(name, binary string, port int, skills []string) m
 		Status:      StatusAlive,
 		URL:         fmt.Sprintf("http://localhost:%d", port),
 		CardURL:     fmt.Sprintf("http://localhost:%d/.well-known/agent.json", port),
+		A2AURL:      fmt.Sprintf("http://localhost:%d", port),
 	}
 	s.agents[name] = agent
 	s.saveStateLocked()
@@ -663,6 +664,7 @@ func (s *Supervisor) registerAgent(name, cardURL string) map[string]string {
 		Name:    name,
 		CardURL: cardURL,
 		URL:     baseURL,
+		A2AURL:  baseURL,
 		Status:  StatusAlive,
 	}
 	s.agents[name] = agent
