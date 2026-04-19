@@ -1,0 +1,33 @@
+[city]
+name = "poc-city"
+version = "1.0.0"
+
+[[agents]]
+id = "mayor"
+role = "orchestrator"
+runtime = "exec"
+provider = "claude"
+cmd = "gassy start --role mayor"
+skills = ["orchestrate", "plan"]
+
+[agents.budget]
+monthly = 100.0
+
+[[agents]]
+id = "engineer"
+role = "specialist"
+runtime = "exec"
+provider = "claude"
+cmd = "gassy start --role engineer"
+skills = ["echo", "build", "test"]
+
+[agents.budget]
+monthly = 50.0
+
+[network]
+mayor_url = "http://localhost:8081"
+engineer_url = "http://localhost:8084"
+
+[runtime.defaults]
+heartbeat_interval = "30s"
+startup_timeout = "60s"

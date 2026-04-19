@@ -1,0 +1,4 @@
+**/claude-agent-sdk-linux-*/claude
+node_modules/
+dist/
+.env

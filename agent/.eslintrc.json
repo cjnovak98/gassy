@@ -1,0 +1,10 @@
+{
+  "extends": ["js", "prettier"],
+  "parserOptions": {
+    "project": "./tsconfig.json"
+  },
+  "env": {
+    "node": true,
+    "es2022": true
+  }
+}

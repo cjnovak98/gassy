@@ -1,0 +1,18 @@
+{
+  "go.formatTool": "gofmt",
+  "go.lintTool": "golangci-lint",
+  "[go]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.lint": true
+    }
+  },
+  "[typescript]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": true
+    }
+  },
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true
+}
