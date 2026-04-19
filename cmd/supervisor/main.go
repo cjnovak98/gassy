@@ -234,6 +234,7 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 				existing.URL = baseURL
 				existing.CardURL = req.CardURL
 				existing.A2AURL = baseURL
+				existing.Role = req.Name
 				existing.Status = StatusAlive
 				s.agents[req.Name] = existing
 				s.saveStateLocked()
@@ -243,6 +244,7 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 			}
 			agent := Agent{
 				Name:    req.Name,
+				Role:    req.Name, // Use name as role (mayor/engineer serve as both ID and role)
 				CardURL: req.CardURL,
 				URL:     baseURL,
 				A2AURL:  baseURL,

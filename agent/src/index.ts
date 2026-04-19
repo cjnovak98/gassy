@@ -111,18 +111,18 @@ async function createA2AServer(
     // Validate the message format
     if (!body.id || !body.method) {
       return {
-        type: "error" as const,
+        jsonrpc: "2.0",
         id: body?.id || "unknown",
-        error: { code: "INVALID_REQUEST", message: "Missing id or method" },
+        error: { code: -32600, message: "Missing id or method" },
       };
     }
 
     // Handle both "message" and "sendStreamingMessage" methods
     if (body.method !== "message" && body.method !== "sendStreamingMessage") {
       return {
-        type: "error" as const,
+        jsonrpc: "2.0",
         id: body.id,
-        error: { code: "UNKNOWN_METHOD", message: `Unknown method: ${body.method}` },
+        error: { code: -32601, message: `Unknown method: ${body.method}` },
       };
     }
 
@@ -199,7 +199,7 @@ async function createA2AServer(
       }
 
       return {
-        type: "message" as const,
+        jsonrpc: "2.0",
         id: body.id,
         result: {
           message: responseText,
@@ -228,10 +228,10 @@ async function createA2AServer(
       }
 
       return {
-        type: "error" as const,
+        jsonrpc: "2.0",
         id: body.id,
         error: {
-          code: "AGENT_ERROR",
+          code: -32000,
           message: error instanceof Error ? error.message : "Unknown error",
         },
       };
