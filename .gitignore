@@ -1,4 +1,8 @@
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
-.beads-credential-key.env
+.beads-credential-key
+
+# Environment variables (contains secrets)
+.env
+.ssh/
