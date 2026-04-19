@@ -47,27 +47,24 @@ func runStop(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// stopSupervisorContainers finds and stops any container running supervisor
+// stopSupervisorContainers finds and stops all gassy containers using label filter
 func stopSupervisorContainers() error {
-	// List all containers
-	cmd := exec.Command("podman", "ps", "-a", "--format", "{{.ID}} {{.Names}} {{.Command}}")
+	// Use label filter to find ALL gassy containers - this is more reliable than
+	// parsing command output which can be truncated
+	cmd := exec.Command("podman", "ps", "--filter", "label=gassy=true", "--format", "{{.Names}}")
 	output, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("listing containers: %w", err)
+		return fmt.Errorf("listing gassy containers: %w", err)
 	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, name := range lines {
+		name = strings.TrimSpace(name)
+		if name == "" {
 			continue
 		}
-		id, name, command := fields[0], fields[1], strings.Join(fields[2:], " ")
-		// Check if this is a supervisor container
-		if strings.Contains(command, "supervisor") || name == "dreamy_dubinsky" {
-			fmt.Printf("Stopping supervisor container: %s (%s)\n", name, id)
-			exec.Command("podman", "rm", "-f", id).Run()
-		}
+		fmt.Printf("Stopping gassy container: %s\n", name)
+		exec.Command("podman", "rm", "-f", name).Run()
 	}
 	return nil
 }

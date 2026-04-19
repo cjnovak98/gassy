@@ -233,6 +233,7 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 			if existing, exists := s.agents[req.Name]; exists {
 				existing.URL = baseURL
 				existing.CardURL = req.CardURL
+				existing.A2AURL = baseURL
 				existing.Status = StatusAlive
 				s.agents[req.Name] = existing
 				s.saveStateLocked()
@@ -244,6 +245,7 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 				Name:    req.Name,
 				CardURL: req.CardURL,
 				URL:     baseURL,
+				A2AURL:  baseURL,
 				Status:  StatusAlive,
 			}
 			s.agents[req.Name] = agent
