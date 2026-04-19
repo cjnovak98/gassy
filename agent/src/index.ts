@@ -118,7 +118,7 @@ async function createA2AServer(
     }
 
     // Handle both "message" and "sendStreamingMessage" methods
-    if (body.method !== "message" && body.method !== "sendStreamingMessage") {
+    if (body.method !== "message" && body.method !== "sendMessage" && body.method !== "sendStreamingMessage") {
       return {
         jsonrpc: "2.0",
         id: body.id,
