@@ -1,5 +1,11 @@
 .PHONY: help build build-agent build-all install test validate clean
 
+# Detect Go installation - support non-standard GOPATH setups like /home/cnovak/go
+GOCMD := go
+GOPATH := $(shell $(GOCMD) env GOPATH 2>/dev/null || echo "$(HOME)/go")
+GOROOT := $(shell $(GOCMD) env GOROOT 2>/dev/null || echo "")
+GOBIN := $(shell $(GOCMD) env GOBIN 2>/dev/null || echo "$(GOPATH)/bin")
+
 # Default target - build and install
 all: build-agent build install
 
@@ -22,8 +28,10 @@ build-agent:
 build-all: build build-agent
 
 install: build build-agent
-	go install ./cmd/gassy/
-	go install ./cmd/gassy-admin/
+	@echo "Installing gassy binaries to $(GOBIN)..."
+	$(GOCMD) install ./cmd/gassy/
+	$(GOCMD) install ./cmd/gassy-admin/
+	@echo "Installed to $(GOBIN)"
 
 test:
 	go test -v ./internal/...
