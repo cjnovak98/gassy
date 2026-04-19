@@ -117,6 +117,7 @@ async function createA2AServer(
         result: {
           id: params?.taskId || "unknown",
           state: "completed",
+          status: { state: "completed" },
         },
       };
     }
@@ -213,6 +214,7 @@ async function createA2AServer(
         result: {
           id: `task-${body.id}`,
           state: "completed",
+          status: { state: "completed" },
           message: { role: "agent", parts: [{ type: "text", text: responseText }] },
         },
       };
