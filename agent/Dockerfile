@@ -25,6 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o supervisor ./cmd/supervisor/
 
 # Build the gassy CLI
 COPY cmd/gassy/ ./cmd/gassy/
+COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=linux go build -o gassy ./cmd/gassy/
 
 # =============================================================================
