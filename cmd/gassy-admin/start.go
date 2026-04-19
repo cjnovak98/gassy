@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/cjnovak98/gassy/internal/city"
 	"github.com/spf13/cobra"
@@ -29,6 +30,11 @@ func init() {
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
+	// Validate credentials before starting
+	if err := validateCredentials(); err != nil {
+		return fmt.Errorf("credential validation failed: %w", err)
+	}
+
 	c, err := city.ParseFile(cityFile)
 	if err != nil {
 		return fmt.Errorf("parsing city config: %w", err)
@@ -51,6 +57,47 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("City %s started with %d agents\n", c.City.Name, len(c.Agents))
 	return nil
+}
+
+// validateCredentials checks that required environment variables are set with valid values
+func validateCredentials() error {
+	required := []string{"ANTHROPIC_AUTH_TOKEN"}
+	placeholder := []string{"test", "your_key_here", ""}
+
+	for _, env := range required {
+		value := os.Getenv(env)
+		if value == "" {
+			// Try reading from env file
+			fileValue, err := readEnvFile(envFile, env)
+			if err != nil || fileValue == "" {
+				return fmt.Errorf("%s is not set in %s", env, envFile)
+			}
+			value = fileValue
+		}
+
+		// Check for placeholder values
+		for _, p := range placeholder {
+			if value == p {
+				return fmt.Errorf("%s has placeholder value %q in %s - please set a valid API key", env, p, envFile)
+			}
+		}
+	}
+	return nil
+}
+
+// readEnvFile reads a specific environment variable from a .env file
+func readEnvFile(path, key string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, key+"=") {
+			return strings.SplitN(line, "=", 2)[1], nil
+		}
+	}
+	return "", fmt.Errorf("key %s not found", key)
 }
 
 func startSupervisor() error {
