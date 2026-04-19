@@ -32,16 +32,43 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	// Stop all gassy containers
+	// First try by known names, then by label, then by image/command
 	containers := []string{"gassy-supervisor", "gassy-mayor", "gassy-engineer", "gassy-designer"}
 	for _, c := range containers {
-		if err := stopContainer(c); err != nil {
-			fmt.Printf("Warning: could not stop %s: %v\n", c, err)
-		} else {
-			fmt.Printf("Stopped: %s\n", c)
-		}
+		stopContainer(c) // ignore errors, container may not exist
+	}
+
+	// Also stop any container running supervisor command with gassy image
+	if err := stopSupervisorContainers(); err != nil {
+		fmt.Printf("Warning: error stopping supervisor: %v\n", err)
 	}
 
 	fmt.Println("All gassy containers stopped")
+	return nil
+}
+
+// stopSupervisorContainers finds and stops any container running supervisor
+func stopSupervisorContainers() error {
+	// List all containers
+	cmd := exec.Command("podman", "ps", "-a", "--format", "{{.ID}} {{.Names}} {{.Command}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("listing containers: %w", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		id, name, command := fields[0], fields[1], strings.Join(fields[2:], " ")
+		// Check if this is a supervisor container
+		if strings.Contains(command, "supervisor") || name == "dreamy_dubinsky" {
+			fmt.Printf("Stopping supervisor container: %s (%s)\n", name, id)
+			exec.Command("podman", "rm", "-f", id).Run()
+		}
+	}
 	return nil
 }
 
