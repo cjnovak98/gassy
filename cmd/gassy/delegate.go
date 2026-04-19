@@ -20,11 +20,9 @@ var delegateCmd = &cobra.Command{
 	RunE:  runDelegate,
 }
 
-var delegateStream bool
 var delegateSkill string
 
 func init() {
-	delegateCmd.Flags().BoolVarP(&delegateStream, "stream", "s", false, "Stream response updates")
 	delegateCmd.Flags().StringVarP(&delegateSkill, "skill", "k", "", "Find agent by skill instead of agent-id")
 	rootCmd.AddCommand(delegateCmd)
 }
@@ -91,20 +89,10 @@ func runDelegate(cmd *cobra.Command, args []string) error {
 
 	params := a2a.SendMessageParams{
 		Message: message,
-		Stream:  delegateStream,
+		Stream:  true, // Always stream
 	}
 
-	if delegateStream {
-		return streamDelegate(ctx, client, params)
-	}
-
-	task, err := client.SendMessage(ctx, params)
-	if err != nil {
-		return fmt.Errorf("send message: %w", err)
-	}
-
-	// Poll for task completion
-	return pollTask(ctx, client, task.ID)
+	return streamDelegate(ctx, client, params)
 }
 
 func streamDelegate(ctx context.Context, client *a2a.Client, params a2a.SendMessageParams) error {
@@ -127,57 +115,6 @@ func streamDelegate(ctx context.Context, client *a2a.Client, params a2a.SendMess
 	}
 	fmt.Println()
 	return nil
-}
-
-func pollTask(ctx context.Context, client *a2a.Client, taskID string) error {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	timeout := time.After(60 * time.Second)
-
-	for {
-		select {
-		case <-timeout:
-			return fmt.Errorf("task timeout")
-		case <-ticker.C:
-			task, err := client.GetTask(ctx, taskID)
-			if err != nil {
-				return fmt.Errorf("get task: %w", err)
-			}
-
-			// Handle nil status
-			if task.Status == nil {
-				fmt.Print(".")
-				continue
-			}
-
-			switch task.Status.State {
-			case a2a.TaskStateCompleted:
-				if task.Message != nil {
-					for _, part := range task.Message.Parts {
-						if tp, ok := part.(a2a.TextPart); ok {
-							fmt.Print(tp.Text)
-						}
-					}
-				}
-				fmt.Println()
-				return nil
-			case a2a.TaskStateFailed:
-				return fmt.Errorf("task failed")
-			case a2a.TaskStateWorking:
-				fmt.Print(".")
-			case a2a.TaskStateInputReq:
-				fmt.Print("[input-required] ")
-			case a2a.TaskStateAuthReq:
-				fmt.Print("[auth-required] ")
-			case a2a.TaskStateCanceled:
-				fmt.Println("[canceled]")
-				return nil
-			case a2a.TaskStateRejected:
-				return fmt.Errorf("task rejected")
-			}
-		}
-	}
 }
 
 // discoverAgentBySkill queries the supervisor's discover endpoint for agents with a skill
