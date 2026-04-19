@@ -108,6 +108,19 @@ async function createA2AServer(
   fastify.post("/a2a", async (request, reply) => {
     const body = request.body as any;
 
+    // Handle getTask separately - agent doesn't maintain task state
+    if (body.method === "getTask") {
+      const params = body.params as any;
+      return {
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          id: params?.taskId || "unknown",
+          state: "completed",
+        },
+      };
+    }
+
     // Validate the message format
     if (!body.id || !body.method) {
       return {
@@ -117,7 +130,7 @@ async function createA2AServer(
       };
     }
 
-    // Handle both "message" and "sendStreamingMessage" methods
+    // Handle message, sendMessage, and sendStreamingMessage methods
     if (body.method !== "message" && body.method !== "sendMessage" && body.method !== "sendStreamingMessage") {
       return {
         jsonrpc: "2.0",
@@ -134,14 +147,11 @@ async function createA2AServer(
       const params = body.params as any;
 
       if (typeof params.message === "string") {
-        // Simple string message
         messageText = params.message;
       } else if (params.message && params.message.parts) {
-        // Parts format: [{type: "text", text: "..."}]
         const parts = params.message.parts as Array<{type: string; text: string}>;
         messageText = parts.map((p) => p.text || "").join("");
       } else if (params.message && params.message.content) {
-        // Content format from some A2A clients
         messageText = params.message.content;
       } else {
         messageText = JSON.stringify(params.message || params);
@@ -176,14 +186,12 @@ async function createA2AServer(
           "Connection": "keep-alive",
         });
 
-        // Send text delta events
         const event = {
           kind: "textDelta",
           textDelta: responseText,
         };
         reply.raw?.write(`data: ${JSON.stringify(event)}\n\n`);
 
-        // Send completion event
         const doneEvent = {
           kind: "completion",
           completion: {
@@ -198,12 +206,14 @@ async function createA2AServer(
         return null;
       }
 
+      // Non-streaming response
       return {
         jsonrpc: "2.0",
         id: body.id,
         result: {
+          id: `task-${body.id}`,
+          state: "completed",
           message: { role: "agent", parts: [{ type: "text", text: responseText }] },
-          sessionId: `session-${body.id}`,
         },
       };
     } catch (error) {
@@ -217,7 +227,7 @@ async function createA2AServer(
         const errorEvent = {
           kind: "error",
           error: {
-            code: "AGENT_ERROR",
+            code: -32000,
             message: error instanceof Error ? error.message : "Unknown error",
           },
         };
@@ -281,7 +291,6 @@ async function registerWithSupervisor(
 // =============================================================================
 
 async function createMayorWebUI(port: number): Promise<FastifyInstance | null> {
-  // Mayor gets a web UI on PORT+1
   const uiPort = port + 1;
 
   const fastify = Fastify({
@@ -361,16 +370,13 @@ async function main() {
   }
 
   // Create session options for the agent SDK
-  // The SDK may pick the wrong platform binary, so we specify it explicitly
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  // Use musl variant for Alpine-based containers
   const claudeBinaryPath = resolve(__dirname, "../node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude");
 
   const sessionOptions: SDKSessionOptions = {
     model: env.ANTHROPIC_MODEL,
     env: sdkEnv,
     pathToClaudeCodeExecutable: claudeBinaryPath,
-    // Container environment: no interactive user, so bypass permission prompts
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
   };
