@@ -23,7 +23,7 @@ build:
 	go build -o gassy ./cmd/gassy/
 
 build-agent:
-	podman build -t localhost:5000/gassy/agent:latest ./agent
+	podman build -t localhost:5000/gassy/agent:latest -f agent/Dockerfile .
 
 build-all: build build-agent
 
