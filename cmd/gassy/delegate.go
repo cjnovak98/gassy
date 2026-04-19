@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/cjnovak98/gassy/internal/a2a"
@@ -40,27 +43,11 @@ func runDelegate(cmd *cobra.Command, args []string) error {
 		}
 		prompt = args[0]
 
-		// Use skill-based discovery via AgentRegistry
-		registry := a2a.NewAgentRegistry()
-		urls := getAllNetworkURLs(ctx)
-
-		// Discover agents from network URLs
-		for _, url := range urls {
-			card, err := a2a.FetchAgentCard(ctx, url)
-			if err != nil {
-				continue
-			}
-			registry.Register(card)
+		// Use supervisor's discover endpoint to find agents by skill
+		agentURL, agentID, err = discoverAgentBySkill(ctx, delegateSkill)
+		if err != nil {
+			return err
 		}
-
-		// Find agents with the requested skill
-		agents := registry.GetBySkill(delegateSkill)
-		if len(agents) == 0 {
-			return fmt.Errorf("no agent found with skill %q", delegateSkill)
-		}
-		// Use first agent with the skill
-		agentID = agents[0].Name
-		agentURL = agents[0].Url
 	} else {
 		// Explicit agent ID delegation: requires agent-id and prompt
 		if len(args) < 2 {
@@ -69,22 +56,25 @@ func runDelegate(cmd *cobra.Command, args []string) error {
 		agentID = args[0]
 		prompt = args[1]
 
-		// Parse city config to get agent URL
-		city, err := ParseFile(cityFile)
+		// Query supervisor for agent URL
+		agents, err := getAgentsFromSupervisor()
 		if err != nil {
-			return fmt.Errorf("parsing city config: %w", err)
+			return fmt.Errorf("fetching agents from supervisor: %w", err)
 		}
 
-		// Get agent config
-		agent := city.GetAgent(agentID)
-		if agent.ID == "" {
-			return fmt.Errorf("agent %q not found in city config", agentID)
+		var found bool
+		for _, a := range agents {
+			if a["agent_id"] == agentID {
+				agentURL = a["a2a_url"].(string)
+				found = true
+				break
+			}
 		}
-
-		// Get agent URL from network config
-		agentURL = getAgentURL(city, agentID)
+		if !found {
+			return fmt.Errorf("agent %q not found in supervisor registry", agentID)
+		}
 		if agentURL == "" {
-			return fmt.Errorf("no URL configured for agent %q", agentID)
+			return fmt.Errorf("agent %q has no A2A URL registered", agentID)
 		}
 	}
 
@@ -189,46 +179,50 @@ func pollTask(ctx context.Context, client *a2a.Client, taskID string) error {
 	}
 }
 
-func getAgentURL(city *City, agentID string) string {
-	// Use map lookup for all agents including known ones
-	networkURLs := mapAgentNetworkURLs(city)
-	if url, ok := networkURLs[agentID]; ok {
-		return url
-	}
-	return ""
-}
-
-// mapAgentNetworkURLs creates a map of agent IDs to their network URLs
-func mapAgentNetworkURLs(city *City) map[string]string {
-	urls := make(map[string]string)
-	// Check network config fields for agent URLs
-	if city.Network.MayorURL != "" {
-		urls["mayor"] = city.Network.MayorURL
-	}
-	if city.Network.EngineerURL != "" {
-		urls["engineer"] = city.Network.EngineerURL
-	}
-	if city.Network.DesignerURL != "" {
-		urls["designer"] = city.Network.DesignerURL
-	}
-	return urls
-}
-
-// getAllNetworkURLs returns all configured network URLs from city config
-func getAllNetworkURLs(ctx context.Context) []string {
-	city, err := ParseFile(cityFile)
+// getAgentsFromSupervisor queries the supervisor registry for all agents
+func getAgentsFromSupervisor() ([]map[string]interface{}, error) {
+	resp, err := http.Get(supervisorHTTP + "/registry/list")
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("connecting to supervisor: %w", err)
 	}
-	var urls []string
-	if city.Network.MayorURL != "" {
-		urls = append(urls, city.Network.MayorURL)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("supervisor returned status %d: %s", resp.StatusCode, string(respBody))
 	}
-	if city.Network.EngineerURL != "" {
-		urls = append(urls, city.Network.EngineerURL)
+
+	var result []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
 	}
-	if city.Network.DesignerURL != "" {
-		urls = append(urls, city.Network.DesignerURL)
+	return result, nil
+}
+
+// discoverAgentBySkill queries the supervisor's discover endpoint for agents with a skill
+func discoverAgentBySkill(ctx context.Context, skill string) (url string, agentID string, err error) {
+	resp, err := http.Get(supervisorHTTP + "/registry/discover?skill=" + skill)
+	if err != nil {
+		return "", "", fmt.Errorf("connecting to supervisor: %w", err)
 	}
-	return urls
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", "", fmt.Errorf("supervisor discover returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result []struct {
+		AgentID string `json:"agent_id"`
+		A2AURL  string `json:"a2a_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", fmt.Errorf("decoding discover response: %w", err)
+	}
+
+	if len(result) == 0 {
+		return "", "", fmt.Errorf("no agent found with skill %q", skill)
+	}
+
+	return result[0].A2AURL, result[0].AgentID, nil
 }
