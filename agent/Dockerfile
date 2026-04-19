@@ -4,7 +4,7 @@
 #
 
 # =============================================================================
-# Stage 1: Go Builder - Build the supervisor binary
+# Stage 1: Go Builder - Build the supervisor and gassy CLI binaries
 # =============================================================================
 FROM docker.io/library/golang:1.21-alpine AS go-builder
 
@@ -22,6 +22,10 @@ COPY cmd/supervisor/ ./cmd/supervisor/
 
 # Build the supervisor binary
 RUN CGO_ENABLED=0 GOOS=linux go build -o supervisor ./cmd/supervisor/
+
+# Build the gassy CLI
+COPY cmd/gassy/ ./cmd/gassy/
+RUN CGO_ENABLED=0 GOOS=linux go build -o gassy ./cmd/gassy/
 
 # =============================================================================
 # Stage 2: Builder - Install deps and compile TypeScript
@@ -64,6 +68,9 @@ COPY --from=builder --chown=nodeapp:nodejs /app/package.json ./
 
 # Copy the supervisor binary from Go builder
 COPY --from=go-builder --chown=nodeapp:nodejs /build/supervisor ./supervisor
+
+# Copy the gassy CLI binary
+COPY --from=go-builder --chown=nodeapp:nodejs /build/gassy ./gassy
 
 # Ensure /app is owned by nodeapp
 RUN chown -R nodeapp:nodejs /app
