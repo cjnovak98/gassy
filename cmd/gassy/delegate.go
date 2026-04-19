@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/cjnovak98/gassy/internal/a2a"
 	"github.com/spf13/cobra"
