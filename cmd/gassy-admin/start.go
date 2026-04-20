@@ -146,14 +146,6 @@ func startSupervisor() error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting supervisor: %w", err)
-	}
-
-	// Give it a moment to start
-	time.Sleep(500 * time.Millisecond)
-	return nil
-}
 
 func startAgentContainer(agent city.AgentConfig, supervisorPort string) error {
 	// Determine port - default to 8080 + offset based on agent index
