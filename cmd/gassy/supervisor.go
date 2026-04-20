@@ -31,8 +31,8 @@ var supervisorListCmd = &cobra.Command{
 var supervisorHireCmd = &cobra.Command{
 	Use:   "hire [name]",
 	Short: "Hire a new agent",
-	Long: `Hire a new agent by name. If the agent is defined in city.toml, its
-configuration is used. Otherwise, provide --role and --skills to define a new agent.`,
+	Long: `Hire a new agent by name. The supervisor handles configuration, port allocation,
+and role mapping. Provide --role and --skills only if creating a custom agent.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSupervisorHire,
 }
@@ -61,10 +61,10 @@ func init() {
 	supervisorCmd.AddCommand(supervisorListCmd, supervisorHireCmd, supervisorFireCmd, supervisorStartCmd)
 	rootCmd.AddCommand(supervisorCmd)
 
-	supervisorHireCmd.Flags().StringVar(&hireRole, "role", "", "Role for the new agent (required if agent not in city.toml)")
+	supervisorHireCmd.Flags().StringVar(&hireRole, "role", "", "Role for the new agent (optional, supervisor uses base config)")
 	supervisorHireCmd.Flags().StringVar(&hireSkills, "skills", "", "Comma-separated skills for the new agent")
-	supervisorHireCmd.Flags().IntVar(&hirePort, "port", 0, "Port for the new agent (auto-detected from city.toml if available)")
-	supervisorHireCmd.Flags().StringVarP(&hireCity, "city", "c", "city.toml", "Path to city.toml")
+	supervisorHireCmd.Flags().IntVar(&hirePort, "port", 0, "Port for the new agent (optional, supervisor allocates dynamically)")
+	supervisorHireCmd.Flags().StringVarP(&hireCity, "city", "c", "", "Path to city.toml (optional, supervisor has base config)")
 }
 
 func sendHTTPRequest(path string, body map[string]interface{}) ([]map[string]interface{}, error) {
@@ -137,42 +137,23 @@ func runSupervisorList(cmd *cobra.Command, args []string) error {
 func runSupervisorHire(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	// Parse city config
-	cityCfg, err := ParseFile(hireCity)
-	if err != nil {
-		return fmt.Errorf("parsing city config: %w", err)
+	// If city flag provided, parse it for logging only - supervisor handles config
+	if hireCity != "" {
+		cityCfg, err := ParseFile(hireCity)
+		if err != nil {
+			return fmt.Errorf("parsing city config: %w", err)
+		}
+		if agentCfg := cityCfg.GetAgent(name); agentCfg.ID != "" {
+			fmt.Printf("Hiring agent %q from city.toml\n", name)
+		}
 	}
 
-	// Look up agent in city.toml
-	agentCfg := cityCfg.GetAgent(name)
-	role := hireRole
-	skills := parseSkills(hireSkills)
-	port := hirePort
-
-	if agentCfg.ID != "" {
-		// Agent found in city.toml - use its config
-		if role == "" {
-			role = agentCfg.Role
-		}
-		if len(skills) == 0 {
-			skills = agentCfg.Skills
-		}
-		// Port is passed through; if 0, supervisor will allocate dynamically
-		fmt.Printf("Hiring agent %q from city.toml (role=%q, skills=%v)\n", name, role, skills)
-	} else {
-		// Agent not in city.toml - use provided flags
-		if role == "" {
-			return fmt.Errorf("agent %q not found in city.toml: --role is required for new agents", name)
-		}
-		// Port will be allocated dynamically if not provided
-		fmt.Printf("Hiring new agent %q (role=%q, port=%d, skills=%v)\n", name, role, port, skills)
-	}
-
-	_, err = sendHTTPRequest("/supervisor/hire", map[string]interface{}{
+	// Send hire request to supervisor - it handles port allocation and role mapping
+	_, err := sendHTTPRequest("/supervisor/hire", map[string]interface{}{
 		"name":   name,
-		"role":   role,
-		"port":   port,
-		"skills": skills,
+		"role":   hireRole,
+		"port":   hirePort, // 0 means supervisor allocates dynamically
+		"skills": parseSkills(hireSkills),
 	})
 	if err != nil {
 		return fmt.Errorf("hire failed: %w", err)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -130,7 +132,7 @@ func (s *Supervisor) healthCheckAndRestart(ctx context.Context) {
 				// Restart if binary/container is available
 				if a.Binary != "" {
 					log.Printf("agent %s is dead, attempting restart", name)
-					newContainerID, err := s.spawnAgentProcess(a.Name, a.Port)
+					newContainerID, err := s.spawnAgentProcess(a.Name, a.Role, a.Port)
 					if err != nil {
 						log.Printf("failed to restart %s: %v", name, err)
 					} else {
@@ -517,17 +519,17 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 		return map[string]string{"error": "agent already exists"}
 	}
 
-	// Allocate port dynamically if not provided
+	// Allocate port dynamically if not specified
 	if port == 0 {
-		var err error
-		port, err = findAvailablePort(8080, 9000)
-		if err != nil {
-			return map[string]string{"error": fmt.Sprintf("no available port in range 8080-9000: %v", err)}
+		port = findAvailablePort()
+		if port == 0 {
+			s.mu.Unlock()
+			return map[string]string{"error": "no available ports found"}
 		}
 	}
 
 	// Spawn the agent container
-	containerID, err := s.spawnAgentProcess(name, port)
+	containerID, err := s.spawnAgentProcess(name, role, port)
 	if err != nil {
 		return map[string]string{"error": fmt.Sprintf("failed to start agent: %v", err)}
 	}
@@ -548,26 +550,6 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 	s.saveStateLocked()
 
 	return map[string]string{"success": "agent hired"}
-}
-
-// findAvailablePort finds an available port in the given range
-func findAvailablePort(min, max int) (int, error) {
-	for port := min; port <= max; port++ {
-		if isPortAvailable(port) {
-			return port, nil
-		}
-	}
-	return 0, fmt.Errorf("no available ports in range %d-%d", min, max)
-}
-
-// isPortAvailable checks if a port is available for binding
-func isPortAvailable(port int) bool {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return false
-	}
-	ln.Close()
-	return true
 }
 
 // getPodmanSocket returns the podman socket path to use
@@ -611,7 +593,7 @@ func podmanCmd(args ...string) *exec.Cmd {
 }
 
 // spawnAgentProcess starts an agent container and waits for it to be ready
-func (s *Supervisor) spawnAgentProcess(name string, port int) (string, error) {
+func (s *Supervisor) spawnAgentProcess(name, role string, port int) (string, error) {
 	// Get supervisor host (use SUPERVISOR_HOST env or detect hostname)
 	supervisorHost := os.Getenv("SUPERVISOR_HOST")
 	if supervisorHost == "" {
@@ -627,7 +609,7 @@ func (s *Supervisor) spawnAgentProcess(name string, port int) (string, error) {
 	cmd := podmanCmd("run", "-d",
 		"--name", containerName,
 		"--network=host",
-		"--env", "AGENT_ROLE="+name,
+		"--env", "AGENT_ROLE="+role,
 		"--env", "SUPERVISOR_URL=http://127.0.0.1:9091",
 		"--env", "PORT="+strconv.Itoa(port),
 	)
@@ -640,18 +622,14 @@ func (s *Supervisor) spawnAgentProcess(name string, port int) (string, error) {
 	}
 
 	cmd.Args = append(cmd.Args, "localhost:5000/gassy/agent:latest")
+	log.Printf("DEBUG: podman args: %v", cmd.Args)
 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("starting container: %w", err)
 	}
 
-	// Wait for the agent to be ready (port reachable)
-	if err := s.waitForPort(port, 30*time.Second); err != nil {
-		// Kill the container if it didn't become ready
-		podmanCmd("kill", containerName).Run()
-		return "", fmt.Errorf("agent not ready within timeout: %w", err)
-	}
-
+	// Agent container started - let it start asynchronously
+	// The reconcile loop will handle restarting if needed
 	return containerName, nil
 }
 
@@ -757,7 +735,48 @@ func (s *Supervisor) UnregisterAgent(agentID string) bool {
 	return false
 }
 
+// loadEnv loads environment variables from a .env file
+func loadEnv() {
+	// Try multiple locations for .env file
+	locations := []string{
+		".env",
+		"/workspace/group/gassy/.env",
+		filepath.Join(filepath.Dir(os.Executable()), ".env"),
+	}
+
+	for _, loc := range locations {
+		f, err := os.Open(loc)
+		if err != nil {
+			continue
+		}
+		defer f.Close()
+
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			// Skip comments and empty lines
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			// Parse KEY=VALUE
+			idx := strings.Index(line, "=")
+			if idx > 0 {
+				key := strings.TrimSpace(line[:idx])
+				value := strings.TrimSpace(line[idx+1:])
+				// Don't override if already set
+				if _, exists := os.LookupEnv(key); !exists {
+					os.Setenv(key, value)
+				}
+			}
+		}
+		return
+	}
+}
+
 func main() {
+	// Load .env file for ANTHROPIC_AUTH_TOKEN and other env vars
+	loadEnv()
+
 	ctx := context.Background()
 	sockPath := "/tmp/gassy-supervisor.sock"
 
@@ -770,4 +789,15 @@ func main() {
 
 	// Wait for interrupt signal
 	<-make(chan struct{})
+}
+// findAvailablePort finds an available TCP port for agent allocation
+func findAvailablePort() int {
+	for port := 8080; port <= 9000; port++ {
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err == nil {
+			ln.Close()
+			return port
+		}
+	}
+	return 0 // no port found
 }
