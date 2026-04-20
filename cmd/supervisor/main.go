@@ -148,8 +148,9 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 				continue
 			}
 			var err error
-			ln, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
+			lnRaw, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 			if err == nil {
+				ln = lnRaw.(*net.TCPListener)
 				break // found available port
 			}
 		}
