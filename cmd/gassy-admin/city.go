@@ -9,7 +9,6 @@ type (
 	City            = city.City
 	CityConfig      = city.CityConfig
 	AgentConfig     = city.AgentConfig
-	BudgetConfig    = city.BudgetConfig
 	NetworkConfig   = city.NetworkConfig
 	RuntimeDefaults = city.RuntimeDefaults
 	Duration        = city.Duration
