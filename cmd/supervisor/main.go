@@ -139,17 +139,22 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 		}
 
 		// Hold the port open while spawning to prevent TOCTOU race
-		ln, err := holdPort(8080, 9000)
-		if err != nil {
-			log.Printf("no available ports for agent %s", agentCfg.ID)
-			continue
+		// Keep trying ports until we find one not already in use
+		var ln *net.TCPListener
+		var port int
+		for port = 8080; port <= 9000; port++ {
+			// Check if port is already used in our reconcile cycle
+			if usedPorts[port] {
+				continue
+			}
+			var err error
+			ln, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
+			if err == nil {
+				break // found available port
+			}
 		}
-		port := ln.Addr().(*net.TCPAddr).Port
-
-		// Skip if this port is already used by another agent in this reconcile cycle
-		if usedPorts[port] {
-			ln.Close()
-			log.Printf("port %d already in use, skipping agent %s", port, agentCfg.ID)
+		if ln == nil {
+			log.Printf("no available ports for agent %s", agentCfg.ID)
 			continue
 		}
 		usedPorts[port] = true
