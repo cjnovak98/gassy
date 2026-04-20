@@ -480,8 +480,7 @@ async function main() {
     env: sdkEnv,
   });
 
-  const sessionId = session.sessionId;
-  console.log(`Session created: ${sessionId}`);
+  console.log(`Session created for ${env.AGENT_ROLE} agent`);
 
   // Register with supervisor
   await registerWithSupervisor(env.SUPERVISOR_URL, env.AGENT_ROLE, env.PORT);
