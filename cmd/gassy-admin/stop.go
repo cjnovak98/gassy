@@ -74,4 +74,3 @@ func stopContainer(name string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-}
