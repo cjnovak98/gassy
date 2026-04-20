@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,27 +37,18 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("credential validation failed: %w", err)
 	}
 
-	c, err := city.ParseFile(cityFile)
-	if err != nil {
+	if _, err := city.ParseFile(cityFile); err != nil {
 		return fmt.Errorf("parsing city config: %w", err)
 	}
 
 	// Start supervisor container
-	if err := startSupervisor(); err != nil {
+	if err := startSupervisor(filepath.Dir(cityFile)); err != nil {
 		return fmt.Errorf("starting supervisor: %w", err)
 	}
 	fmt.Println("Started supervisor container")
 
-	// Start agent containers
-	supervisorPort := "9091"
-	for _, agent := range c.Agents {
-		if err := startAgentContainer(agent, supervisorPort); err != nil {
-			return fmt.Errorf("starting agent %s: %w", agent.ID, err)
-		}
-		fmt.Printf("Started agent container: %s\n", agent.ID)
-	}
-
-	fmt.Printf("City %s started with %d agents\n", c.City.Name, len(c.Agents))
+	// Supervisor handles agent lifecycle via reconcile
+	fmt.Println("Supervisor will reconcile agents from city.toml")
 	return nil
 }
 
@@ -113,7 +105,7 @@ func ensurePodmanSocket() error {
 	return nil
 }
 
-func startSupervisor() error {
+func startSupervisor(cityDir string) error {
 	// Ensure podman socket is running for rootless podman
 	if err := ensurePodmanSocket(); err != nil {
 		return fmt.Errorf("podman socket: %w", err)
@@ -122,12 +114,13 @@ func startSupervisor() error {
 	socketPath := "/run/user/1000/podman/podman.sock"
 
 	// Start supervisor in a container with root access
-	// Mount the rootless podman socket - the socket has mode 777 so root can access it
+	// Mount the rootless podman socket and the city config directory
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", "gassy-supervisor",
 		"--label", "gassy=true",
 		"--network=host",
 		"-v", socketPath+":"+socketPath,
+		"-v", cityDir+":/etc/gassy:ro",
 		"-e", "PODMAN_SOCKET="+socketPath,
 		"-e", "CONTAINER_HOST=unix://"+socketPath,
 		"--env-file", envFile,

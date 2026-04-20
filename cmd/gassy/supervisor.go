@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -51,14 +48,8 @@ var supervisorFireCmd = &cobra.Command{
 	RunE:  runSupervisorFire,
 }
 
-var supervisorStartCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Start the supervisor process as a background daemon",
-	RunE:  runSupervisorStart,
-}
-
 func init() {
-	supervisorCmd.AddCommand(supervisorListCmd, supervisorHireCmd, supervisorFireCmd, supervisorStartCmd)
+	supervisorCmd.AddCommand(supervisorListCmd, supervisorHireCmd, supervisorFireCmd)
 	rootCmd.AddCommand(supervisorCmd)
 
 	supervisorHireCmd.Flags().StringVar(&hireRole, "role", "", "Role for the new agent (optional, supervisor uses base config)")
@@ -191,55 +182,3 @@ func runSupervisorFire(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runSupervisorStart(cmd *cobra.Command, args []string) error {
-	// Check if already running by trying to connect to HTTP
-	resp, err := http.Get(supervisorHTTP + "/health")
-	if err == nil {
-		resp.Body.Close()
-		fmt.Println("Supervisor is already running")
-		return nil
-	}
-
-	// Find the supervisor binary
-	execPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("finding executable: %w", err)
-	}
-
-	supervisorBin := filepath.Join(filepath.Dir(execPath), "supervisor")
-	if _, err := os.Stat(supervisorBin); os.IsNotExist(err) {
-		// Try looking in cmd/supervisor relative to cwd
-		cwd, _ := os.Getwd()
-		supervisorBin = filepath.Join(cwd, "cmd", "supervisor", "supervisor")
-	}
-
-	// Start the supervisor in the background
-	proc, err := os.StartProcess(supervisorBin, []string{supervisorBin}, &os.ProcAttr{
-		Dir:   filepath.Dir(supervisorBin),
-		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
-	})
-	if err != nil {
-		// If direct start fails, try using `go run`
-		return startSupervisorWithGoRun()
-	}
-
-	fmt.Printf("Supervisor started with PID %d\n", proc.Pid)
-	return nil
-}
-
-func startSupervisorWithGoRun() error {
-	// Use go run to start supervisor
-	cwd, _ := os.Getwd()
-
-	cmd := exec.Command("go", "run", "./cmd/supervisor")
-	cmd.Dir = cwd
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting supervisor with go run: %w", err)
-	}
-
-	fmt.Printf("Supervisor started with PID %d\n", cmd.Process.Pid)
-	return nil
-}

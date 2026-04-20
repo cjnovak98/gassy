@@ -168,7 +168,7 @@ Agents register back with their actual `a2a_url` so peers can communicate direct
 No port configuration needed in city.toml — the Supervisor handles all allocation.
 
 ```go
-// Supervisor types (internal/supervisor/supervisor.go)
+// Supervisor types (cmd/supervisor/main.go)
 type Supervisor struct {
     city        CityConfig        // bootstrap seed, not enforced
     beads       BeadsStore        // work tracking, budgets
@@ -368,7 +368,7 @@ Phase 0 (Foundation), Phase 1 (Orchestration Core), and Phase 2 (Agent Integrati
 - `gassy supervisor` CLI (list, hire, fire, start)
 
 ### Phase 2 — Agent Integration ✅
-- Exec runtime provider (`internal/runtime/exec.go`)
+- Exec runtime provider (`internal/runtime/exec.go`) — removed (was unused)
 - A2A server middleware per agent (`examples/poc/engineer/main.go`, `examples/poc/mayor/main.go`)
 - `gassy rig add`
 - Agent self-registration via supervisor HTTP API (`:9091`)

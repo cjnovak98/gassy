@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cjnovak98/gassy/internal/city"
 )
 
 // Agent represents a registered agent in the supervisor's registry
@@ -48,15 +51,17 @@ type Supervisor struct {
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
 	stateFile  string
+	cityPath   string
 }
 
 // NewSupervisor creates a new supervisor instance
-func NewSupervisor(socketPath string) *Supervisor {
+func NewSupervisor(socketPath, cityPath string) *Supervisor {
 	s := &Supervisor{
 		agents:     make(map[string]Agent),
 		socketPath: socketPath,
 		stopCh:     make(chan struct{}),
 		stateFile:  "/tmp/gassy-supervisor-registry.json",
+		cityPath:   cityPath,
 	}
 	s.loadState()
 	return s
@@ -105,6 +110,57 @@ func (s *Supervisor) reconcileLoop(ctx context.Context) {
 			s.healthCheckAndRestart(ctx)
 		}
 	}
+}
+
+// Reconcile reads city.toml and spawns any agents that are not yet registered.
+// This is called once at startup to bootstrap agents from config.
+func (s *Supervisor) Reconcile(ctx context.Context) error {
+	if s.cityPath == "" {
+		return nil
+	}
+
+	cityCfg, err := city.ParseFile(s.cityPath)
+	if err != nil {
+		return fmt.Errorf("parsing city config %q: %w", s.cityPath, err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, agentCfg := range cityCfg.Agents {
+		if _, exists := s.agents[agentCfg.ID]; exists {
+			continue
+		}
+
+		port := findAvailablePort()
+		if port == 0 {
+			log.Printf("no available ports for agent %s", agentCfg.ID)
+			continue
+		}
+
+		containerID, err := s.spawnAgentProcess(agentCfg.ID, agentCfg.Role, port)
+		if err != nil {
+			log.Printf("failed to spawn agent %s: %v", agentCfg.ID, err)
+			continue
+		}
+
+		s.agents[agentCfg.ID] = Agent{
+			Name:        agentCfg.ID,
+			Role:        agentCfg.Role,
+			Binary:      agentCfg.ID,
+			Port:        port,
+			Skills:      agentCfg.Skills,
+			ContainerID: containerID,
+			Status:      StatusAlive,
+			URL:         fmt.Sprintf("http://localhost:%d", port),
+			CardURL:     fmt.Sprintf("http://localhost:%d/.well-known/agent.json", port),
+			A2AURL:      fmt.Sprintf("http://localhost:%d", port),
+		}
+		log.Printf("reconciled agent %s (role=%s, port=%d)", agentCfg.ID, agentCfg.Role, port)
+	}
+
+	s.saveStateLocked()
+	return nil
 }
 
 // healthCheckAndRestart checks health and restarts dead agents
@@ -778,15 +834,24 @@ func loadEnv() {
 }
 
 func main() {
+	// Parse flags
+	cityFlag := flag.String("city", "/etc/gassy/city.toml", "Path to city.toml for initial reconcile")
+	flag.Parse()
+
 	// Load .env file for ANTHROPIC_AUTH_TOKEN and other env vars
 	loadEnv()
 
 	ctx := context.Background()
 	sockPath := "/tmp/gassy-supervisor.sock"
 
-	supervisor := NewSupervisor(sockPath)
+	supervisor := NewSupervisor(sockPath, *cityFlag)
 	if err := supervisor.Start(ctx); err != nil {
 		log.Fatalf("failed to start supervisor: %v", err)
+	}
+
+	// Bootstrap agents from city.toml
+	if err := supervisor.Reconcile(ctx); err != nil {
+		log.Printf("reconcile error: %v", err)
 	}
 
 	log.Printf("supervisor started on socket %s", sockPath)

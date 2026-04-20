@@ -10,28 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestGetProvider(t *testing.T) {
-	tests := []struct {
-		name       string
-		provider   string
-		wantString string
-	}{
-		{"tmux provider", "tmux", "*runtime.TmuxProvider"},
-		{"exec provider", "exec", "*runtime.ExecProvider"},
-		{"unknown defaults to exec", "unknown", "*runtime.ExecProvider"},
-		{"empty defaults to exec", "", "*runtime.ExecProvider"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			prov := getProvider(tt.provider)
-			if prov == nil {
-				t.Fatal("getProvider() returned nil")
-			}
-		})
-	}
-}
-
 func TestGetAgentURL(t *testing.T) {
 	city := &City{
 		Network: NetworkConfig{

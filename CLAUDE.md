@@ -59,9 +59,9 @@ Gassy is an A2A-native orchestration platform. Key concepts:
 - `city.toml.example` — Example city configuration
 - `cmd/gassy/` — CLI implementation (not yet written — starts with Phase 1)
 - `internal/a2a/` — A2A client, server, and types (not yet written — starts with Phase 0)
-- `internal/supervisor/` — Reconcile loop and agent lifecycle
+- `internal/supervisor/` — (removed — was orphaned)
 - `internal/beads/` — Beads store integration
-- `internal/runtime/` — Runtime providers (tmux, exec, k8s)
+- `internal/runtime/` — (removed — was orphaned, unused)
 
 ## Build & Test
 
