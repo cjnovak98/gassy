@@ -113,6 +113,18 @@ func findGassyRoot(start string) string {
 		}
 		dir = parent
 	}
+	// If we couldn't find it via search, try common locations
+	commonPaths := []string{
+		"/home/cnovak/gassy",
+		"/var/home/cnovak/gassy",
+		filepath.Join(os.Getenv("HOME"), "gassy"),
+	}
+	for _, p := range commonPaths {
+		dockerfile := filepath.Join(p, "agent", "Dockerfile")
+		if _, err := os.Stat(dockerfile); err == nil {
+			return p
+		}
+	}
 	return ""
 }
 
