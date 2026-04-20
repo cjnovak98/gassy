@@ -147,13 +147,13 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 			continue
 		}
 
-		// Wait for the agent to bind to the port before closing our hold
-		// and moving to the next agent (prevents port being reallocated)
-		ln.Close()
+		// Wait for the agent to bind to the port BEFORE releasing our hold.
+		// This prevents another agent from grabbing the same port while we wait.
 		if err := s.waitForPort(port, 10*time.Second); err != nil {
 			log.Printf("agent %s port %d not reachable: %v", agentCfg.ID, port, err)
 			// Continue anyway — container is running, it may be slow to start
 		}
+		ln.Close()
 
 		s.agents[agentCfg.ID] = Agent{
 			Name:        agentCfg.ID,
@@ -594,18 +594,19 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 			return map[string]string{"error": "no available ports found"}
 		}
 		port = ln.Addr().(*net.TCPAddr).Port
+
+		// Spawn agent while holding the port to prevent TOCTOU race
+		containerID, err := s.spawnAgentProcess(name, role, port)
+		if err != nil {
+			ln.Close()
+			return map[string]string{"error": fmt.Sprintf("failed to start agent: %v", err)}
+		}
+
+		// Wait for agent to bind, then release the held socket
 		ln.Close()
-	}
-
-	// Spawn the agent container
-	containerID, err := s.spawnAgentProcess(name, role, port)
-	if err != nil {
-		return map[string]string{"error": fmt.Sprintf("failed to start agent: %v", err)}
-	}
-
-	// Wait for agent to bind to port before returning
-	if err := s.waitForPort(port, 10*time.Second); err != nil {
-		log.Printf("agent %s port %d not reachable: %v", name, port, err)
+		if err := s.waitForPort(port, 10*time.Second); err != nil {
+			log.Printf("agent %s port %d not reachable: %v", name, port, err)
+		}
 	}
 
 	agent := Agent{
