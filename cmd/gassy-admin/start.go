@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/cjnovak98/gassy/internal/city"
 	"github.com/spf13/cobra"
@@ -109,13 +110,20 @@ func ensurePodmanSocket() {
 		return // Socket already exists, no action needed
 	}
 
-	// Try to start the socket via systemd
+	// Try to start the socket via systemd first
 	cmd := exec.Command("systemctl", "--user", "start", "podman.socket")
 	if err := cmd.Run(); err != nil {
-		// If systemctl fails, try running podman system service directly
-		cmd := exec.Command("podman", "system", "service", "--time=0")
-		cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=autolaunch:")
-		cmd.Run() // Run in background would be better but this is fire-and-forget
+		// If systemctl fails, try running podman system service directly in background
+		// This creates a temporary socket that persists until the process is killed
+		proc, err := os.StartProcess("/usr/bin/podman", []string{"podman", "system", "service", "--time=0"}, &os.ProcAttr{
+			Dir: "/tmp",
+			Env: append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=autolaunch:"),
+		})
+		if err == nil {
+			proc.Release() // Let it run independently
+			// Give it a moment to start
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
 }
 
