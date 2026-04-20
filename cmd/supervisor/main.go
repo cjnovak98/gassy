@@ -127,6 +127,12 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Track ports used during this reconcile cycle to prevent duplicate assignments
+	usedPorts := make(map[int]bool)
+	for _, a := range s.agents {
+		usedPorts[a.Port] = true
+	}
+
 	for _, agentCfg := range cityCfg.Agents {
 		if _, exists := s.agents[agentCfg.ID]; exists {
 			continue
@@ -139,6 +145,14 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 			continue
 		}
 		port := ln.Addr().(*net.TCPAddr).Port
+
+		// Skip if this port is already used by another agent in this reconcile cycle
+		if usedPorts[port] {
+			ln.Close()
+			log.Printf("port %d already in use, skipping agent %s", port, agentCfg.ID)
+			continue
+		}
+		usedPorts[port] = true
 
 		containerID, err := s.spawnAgentProcess(agentCfg.ID, agentCfg.Role, port)
 		if err != nil {
@@ -153,8 +167,9 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 			log.Printf("agent %s port %d not reachable: %v", agentCfg.ID, port, err)
 			// Continue anyway — container is running, it may be slow to start
 		}
-		ln.Close()
 
+		// Add agent to registry BEFORE releasing port hold to prevent
+		// same port being reassigned to next agent in reconcile loop
 		s.agents[agentCfg.ID] = Agent{
 			Name:        agentCfg.ID,
 			Role:        agentCfg.Role,
@@ -168,6 +183,7 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 			A2AURL:      fmt.Sprintf("http://localhost:%d", port),
 		}
 		log.Printf("reconciled agent %s (role=%s, port=%d)", agentCfg.ID, agentCfg.Role, port)
+		ln.Close()
 	}
 
 	s.saveStateLocked()
