@@ -50,8 +50,8 @@ func runStop(cmd *cobra.Command, args []string) error {
 // stopSupervisorContainers finds and stops all gassy containers using label filter
 func stopSupervisorContainers() error {
 	// Use label filter to find ALL gassy containers - this is more reliable than
-	// parsing command output which can be truncated
-	cmd := exec.Command("podman", "ps", "--filter", "label=gassy=true", "--format", "{{.Names}}")
+	// parsing command output which can be truncated. Use -a to include stopped containers.
+	cmd := exec.Command("podman", "ps", "-a", "--filter", "label=gassy=true", "--format", "{{.Names}}")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("listing gassy containers: %w", err)
