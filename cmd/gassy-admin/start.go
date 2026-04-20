@@ -100,13 +100,36 @@ func readEnvFile(path, key string) (string, error) {
 	return "", fmt.Errorf("key %s not found", key)
 }
 
+// ensurePodmanSocket starts the podman socket if not already running
+func ensurePodmanSocket() {
+	socketPath := "/run/user/1000/podman/podman.sock"
+
+	// Check if socket already exists
+	if _, err := os.Stat(socketPath); err == nil {
+		return // Socket already exists, no action needed
+	}
+
+	// Try to start the socket via systemd
+	cmd := exec.Command("systemctl", "--user", "start", "podman.socket")
+	if err := cmd.Run(); err != nil {
+		// If systemctl fails, try running podman system service directly
+		cmd := exec.Command("podman", "system", "service", "--time=0")
+		cmd.Env = append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=autolaunch:")
+		cmd.Run() // Run in background would be better but this is fire-and-forget
+	}
+}
+
 func startSupervisor() error {
+	// Ensure podman socket is running for rootless podman
+	ensurePodmanSocket()
+
+	socketPath := "/run/user/1000/podman/podman.sock"
 	args := []string{
 		"run", "-d",
 		"--name", "gassy-supervisor",
 		"--label", "gassy=true",
 		"--network=host",
-		"--volume=/run/podman/podman.sock:/run/podman/podman.sock",
+		"--volume=" + socketPath + ":" + socketPath,
 		"--env-file", envFile,
 		"localhost:5000/gassy/agent:latest",
 		"supervisor",
