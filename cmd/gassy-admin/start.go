@@ -101,64 +101,43 @@ func readEnvFile(path, key string) (string, error) {
 	return "", fmt.Errorf("key %s not found", key)
 }
 
-// ensurePodmanSocket starts the podman socket if not already running
-func ensurePodmanSocket() {
-	socketPath := "/run/user/1000/podman/podman.sock"
-
-	// Check if socket already exists
-	if _, err := os.Stat(socketPath); err == nil {
-		return // Socket already exists, no action needed
+// ensurePodmanSocket enables and starts the rootless podman socket via systemd
+func ensurePodmanSocket() error {
+	// Use systemctl --user enable --now to ensure the socket is enabled and started
+	cmd := exec.Command("systemctl", "--user", "enable", "--now", "podman.socket")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("enabling podman socket: %w (output: %s)", err, strings.TrimSpace(string(out)))
 	}
-
-	// Try to start the socket via systemd first
-	cmd := exec.Command("systemctl", "--user", "start", "podman.socket")
-	if err := cmd.Run(); err != nil {
-		// If systemctl fails, try running podman system service directly in background
-		// This creates a temporary socket that persists until the process is killed
-		proc, err := os.StartProcess("/usr/bin/podman", []string{"podman", "system", "service", "--time=0"}, &os.ProcAttr{
-			Dir: "/tmp",
-			Env: append(os.Environ(), "DBUS_SESSION_BUS_ADDRESS=autolaunch:"),
-		})
-		if err == nil {
-			proc.Release() // Let it run independently
-			// Give it a moment to start
-			time.Sleep(500 * time.Millisecond)
-		}
-	}
+	// Give systemd a moment to create the socket file
+	time.Sleep(300 * time.Millisecond)
+	return nil
 }
 
 func startSupervisor() error {
 	// Ensure podman socket is running for rootless podman
-	ensurePodmanSocket()
-
-	// Run supervisor on the HOST (not in a container) so it can spawn containers
-	// Find supervisor binary - check various locations
-	var supervisorBin string
-	paths := []string{
-		os.Getenv("GOBIN") + "/supervisor",
-		os.Getenv("GOPATH") + "/bin/supervisor",
-		os.Getenv("HOME") + "/go/bin/supervisor",
-		"/var/home/cnovak/go/bin/supervisor",
-		"/usr/local/bin/supervisor",
-	}
-	for _, p := range paths {
-		if strings.HasPrefix(p, "/") { // Only check absolute paths
-			if _, err := os.Stat(p); err == nil {
-				supervisorBin = p
-				break
-			}
-		}
-	}
-	if supervisorBin == "" {
-		return fmt.Errorf("supervisor binary not found (checked: GOBIN, GOPATH/bin, ~/go/bin)")
+	if err := ensurePodmanSocket(); err != nil {
+		return fmt.Errorf("podman socket: %w", err)
 	}
 
-	// Start supervisor as a background process on the host
-	cmd := exec.Command(supervisorBin)
+	socketPath := "/run/user/1000/podman/podman.sock"
+
+	// Start supervisor in a container with root access
+	// Mount the rootless podman socket - the socket has mode 777 so root can access it
+	cmd := exec.Command("podman", "run", "-d",
+		"--name", "gassy-supervisor",
+		"--label", "gassy=true",
+		"--network=host",
+		"-v", socketPath+":"+socketPath,
+		"-e", "PODMAN_SOCKET="+socketPath,
+		"-e", "CONTAINER_HOST=unix://"+socketPath,
+		"--env-file", envFile,
+		"--security-opt", "label=disable",
+		"localhost:5000/gassy/supervisor:latest",
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting supervisor: %w", err)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("starting supervisor container: %w", err)
 	}
 
 	// Give it a moment to start
