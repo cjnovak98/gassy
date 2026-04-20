@@ -278,9 +278,7 @@ gassy/
 │   │   ├── city.go         # city.toml parsing
 │   │   ├── delegate.go     # A2A task delegation
 │   │   ├── agent.go        # Agent list/discover
-│   │   ├── start.go        # Supervisor start
-│   │   ├── stop.go
-│   │   └── status.go
+│   │   └── supervisor.go   # Supervisor client (list/hire/fire)
 │   └── gassy-admin/        # Container lifecycle CLI
 │       ├── main.go
 │       ├── start.go        # Container start
@@ -295,18 +293,12 @@ gassy/
 │   │   ├── server.go       # A2A server middleware
 │   │   ├── card.go         # Agent Card types
 │   │   └── types.go        # A2A protocol types
-│   ├── supervisor/
-│   │   ├── supervisor.go   # Registry + reconcile loop
-│   │   └── budget.go       # Budget enforcement
+│   ├── supervisor/        # Supervisor (runs in container)
+│   │   └── main.go        # Registry + reconcile loop
 │   ├── beads/
 │   │   └── store.go        # Beads RPC client
 │   ├── city/
 │   │   └── city.go         # Shared city.toml parsing
-│   └── runtime/
-│       ├── provider.go     # Runtime abstraction
-│       ├── podman.go       # Podman container manager
-│       ├── exec.go         # Exec provider (legacy)
-│       └── tmux.go         # Tmux provider (legacy)
 ├── agent/                  # Agent container image
 │   ├── Dockerfile
 │   └── src/                # TypeScript agent implementation
@@ -320,32 +312,26 @@ gassy/
 ## CLI Commands
 
 ```bash
-# Initialize a new city (bootstrap only)
-gassy init ~/bright-lights
-cd ~/bright-lights
-
-# Start the city (supervisor + initial agents from city.toml)
-gassy start
-
-# Agent lifecycle (called by Mayor/Directors with authority)
-gassy hire <role> <binary> [skills...]  # Add agent to city
-gassy fire <agent_id>                    # Remove agent from city
+# Start the city (supervisor container + agents from city.toml)
+gassy-admin start
 
 # List all agents (from Supervisor registry)
-gassy list
+gassy agent list
 
 # Delegate work to an agent
 gassy delegate engineer "Write a WebSocket handler"
 
-# Check budget
-gassy budget
+# Supervisor management (client commands to containerized supervisor)
+gassy supervisor list
+gassy supervisor hire <name> <role> [skills...]
+gassy supervisor fire <name>
 
 # Stop the city
-gassy stop
+gassy-admin stop
 ```
 
 **Key distinction**: `gassy rig add` (Phase 2) registers an agent with
-the Supervisor at startup. `gassy hire` (organizational) is when a Mayor
+the Supervisor at startup. `gassy supervisor hire` (organizational) is when a Mayor
 or Director intentionally adds an agent to the workforce. Both use the
 Supervisor's underlying hire mechanism, but they serve different purposes
 (bootstrap vs. organizational action).
@@ -364,22 +350,23 @@ Phase 0 (Foundation), Phase 1 (Orchestration Core), and Phase 2 (Agent Integrati
 ### Phase 1 — Orchestration Core ✅
 - Supervisor reconcile loop (`cmd/supervisor/main.go`)
 - Agent lifecycle: hire, fire, health check, restart (`cmd/supervisor/main.go`)
-- `gassy start` / `gassy stop` / `gassy status` / `gassy delegate` / `gassy rig`
-- `gassy supervisor` CLI (list, hire, fire, start)
+- Supervisor runs in container (`localhost:5000/gassy/supervisor:latest`)
+- `gassy-admin start` launches supervisor + reconciles agents from city.toml
+- `gassy supervisor` CLI (list, hire, fire)
+- `gassy delegate` for A2A task delegation
 
 ### Phase 2 — Agent Integration ✅
-- Exec runtime provider (`internal/runtime/exec.go`) — removed (was unused)
 - A2A server middleware per agent (`examples/poc/engineer/main.go`, `examples/poc/mayor/main.go`)
-- `gassy rig add`
 - Agent self-registration via supervisor HTTP API (`:9091`)
+- Mayor discovers agents from supervisor at startup
 - Mayor discovers agents from supervisor at startup
 
 ### What's Running
 - **Supervisor**: port 9091 (registry + resource manager + reconcile)
 - **Agents**: dynamic ports allocated from `port_range` (default 8080-9000)
-- `gassy-admin start` to launch all containers
+- `gassy-admin start` to launch supervisor container and reconcile agents from city.toml
 - `gassy-admin stop` to stop all containers
-- `gassy list` to list registered agents from Supervisor registry
+- `gassy agent list` to list registered agents from Supervisor registry
 - `gassy delegate <agent> "<message>"` to delegate work via A2A
 - Ports are allocated automatically — no manual port management needed
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -78,16 +77,13 @@ func stopContainer(name string) error {
 	return cmd.Run()
 }
 
-// killSupervisorProcess kills the supervisor process running on the host
+// killSupervisorProcess kills the supervisor container
+// Note: Supervisor runs in a container, not as a host process.
+// This is kept for backwards compatibility but is now a no-op
+// since the container is stopped via label filter above.
 func killSupervisorProcess() {
-	// Try pkill first (more portable)
-	cmd := exec.Command("pkill", "-f", "supervisor")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		// If pkill fails, try killall
-		cmd := exec.Command("killall", "supervisor")
-		cmd.Run()
-	}
-	fmt.Println("Stopped supervisor process")
+	// Supervisor runs in container named gassy-supervisor
+	// Container is stopped via stopSupervisorContainers() using label filter
+	// This function is kept for backwards compatibility but is now a no-op
+	fmt.Println("Supervisor container stopped via label filter")
 }
