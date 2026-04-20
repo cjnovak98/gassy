@@ -1,4 +1,4 @@
-.PHONY: help build build-agent build-all install test validate clean
+.PHONY: help build build-agent build-supervisor build-all install test validate clean
 
 # Detect Go installation - support non-standard GOPATH setups like /home/cnovak/go
 GOCMD := go
@@ -7,13 +7,14 @@ GOROOT := $(shell $(GOCMD) env GOROOT 2>/dev/null || echo "")
 GOBIN := $(shell $(GOCMD) env GOBIN 2>/dev/null || echo "$(GOPATH)/bin")
 
 # Default target - build and install
-all: build-agent build install
+all: build-agent build-supervisor build install
 
 help:
 	@echo "Available targets:"
 	@echo "  make          - (default) build + install to PATH"
 	@echo "  make build    - Build Go CLI to ./gassy"
 	@echo "  make build-agent - Build TypeScript agent"
+	@echo "  make build-supervisor - Build supervisor container image"
 	@echo "  make build-all - Build both CLI and agent (no install)"
 	@echo "  make install - Install CLI binaries to $(GOBIN)"
 	@echo "  make test    - Run Go unit tests"
@@ -26,7 +27,10 @@ build:
 build-agent:
 	podman build -t localhost:5000/gassy/agent:latest -f agent/Dockerfile .
 
-build-all: build build-agent
+build-supervisor:
+	podman build -t localhost:5000/gassy/supervisor:latest -f supervisor/Dockerfile .
+
+build-all: build build-agent build-supervisor
 
 install: build build-agent
 	@echo "Installing gassy binaries to $(GOBIN)..."

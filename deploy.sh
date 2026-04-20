@@ -52,14 +52,18 @@ ssh -i "$SSH_KEY" "$VM_HOST" "
     export PATH=\$GOBIN:/usr/bin:\$PATH
     mkdir -p \$GOPATH \$GOBIN
 
+    # Stop and remove existing gassy containers
+    echo 'Stopping existing gassy containers...'
+    podman rm -f \$(podman ps --filter label=gassy=true --format '{{.Names}}') 2>/dev/null || true
+
     # Restore .env if it exists in old directory
     if [ -f /home/cnovak/gassy.old/.env ]; then
         cp /home/cnovak/gassy.old/.env .
     fi
 
     # Build and install everything
-    echo 'Building agent image...'
-    make build-agent
+    echo 'Building agent and supervisor images...'
+    make build-agent build-supervisor
 
     echo 'Installing CLI binaries...'
     make install
