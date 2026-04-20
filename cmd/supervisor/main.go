@@ -895,7 +895,7 @@ func holdPort(start, end int) (*net.TCPListener, error) {
 	for port := start; port <= end; port++ {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err == nil {
-			return ln, nil
+			return ln.(*net.TCPListener), nil
 		}
 	}
 	return nil, fmt.Errorf("no available ports in range %d-%d", start, end)
