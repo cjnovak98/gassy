@@ -2,32 +2,27 @@
 name = "poc-city"
 version = "1.0.0"
 
+[runtime.defaults]
+heartbeat_interval = "30s"
+startup_timeout = "60s"
+
+[runtime.port_range]
+min = 8080
+max = 9000
+
+# Agent registry
+# Each agent's role maps to a directory in config/{role}/
+
 [[agents]]
 id = "mayor"
-role = "orchestrator"
-runtime = "exec"
-provider = "claude"
-cmd = "gassy start --role mayor"
-skills = ["orchestrate", "plan"]
-
-[agents.budget]
-monthly = 100.0
+role = "mayor"           # Maps to config/mayor/
+cmd = "mayor"            # Container command
 
 [[agents]]
 id = "engineer"
-role = "specialist"
-runtime = "exec"
-provider = "claude"
-cmd = "gassy start --role engineer"
-skills = ["echo", "build", "test"]
-
-[agents.budget]
-monthly = 50.0
+role = "engineer"        # Maps to config/engineer/
+cmd = "engineer"         # Container command
 
 [network]
 mayor_url = "http://localhost:8081"
 engineer_url = "http://localhost:8084"
-
-[runtime.defaults]
-heartbeat_interval = "30s"
-startup_timeout = "60s"

@@ -39,26 +39,11 @@ type PortRange struct {
 
 // AgentConfig represents an agent in the city
 type AgentConfig struct {
-	ID       string       `toml:"id"`
-	Role     string       `toml:"role"`
-	Runtime  string       `toml:"runtime"`
-	Provider string       `toml:"provider"`
-	Cmd      string       `toml:"cmd"`
-	Skills   []string     `toml:"skills,omitempty"`
-	Budget   BudgetConfig `toml:"budget"`
-}
-
-// BudgetConfig represents an agent's budget
-type BudgetConfig struct {
-	Monthly float64 `toml:"monthly"`
-}
-
-// Validate checks if the budget values are valid
-func (b *BudgetConfig) Validate() error {
-	if b.Monthly < 0 {
-		return fmt.Errorf("budget monthly cannot be negative: %.2f", b.Monthly)
-	}
-	return nil
+	ID      string   `toml:"id"`
+	Role    string   `toml:"role"`
+	Runtime string   `toml:"runtime"`
+	Cmd     string   `toml:"cmd"`
+	Skills  []string `toml:"skills,omitempty"`
 }
 
 // NetworkConfig represents agent network endpoints
@@ -103,12 +88,6 @@ func Parse(data []byte) (*City, error) {
 	var city City
 	if err := toml.Unmarshal(data, &city); err != nil {
 		return nil, fmt.Errorf("parsing city.toml: %w", err)
-	}
-	// Validate budgets for all agents
-	for i := range city.Agents {
-		if err := city.Agents[i].Budget.Validate(); err != nil {
-			return nil, fmt.Errorf("agent %q: %w", city.Agents[i].ID, err)
-		}
 	}
 	return &city, nil
 }

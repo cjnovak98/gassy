@@ -1,0 +1,23 @@
+skills:
+  - name: coding
+    description: Write and edit code files
+    triggers:
+      - write code
+      - edit files
+      - modify files
+      - implement feature
+      - refactor
+  - name: testing
+    description: Run tests and verify functionality
+    triggers:
+      - run tests
+      - test functionality
+      - verify
+      - validate
+  - name: building
+    description: Build and compile projects
+    triggers:
+      - build
+      - compile
+      - package
+      - deploy

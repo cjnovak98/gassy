@@ -1,33 +1,35 @@
+# City Configuration
+# Defines the city's agents and their runtime configuration.
+# Role definitions (skills, prompts) come from config/{role}/ directory.
+
 [city]
 name = "poc-city"
 version = "1.0.0"
 
-[[agents]]
-id = "mayor"
-role = "orchestrator"
-runtime = "exec"
-provider = "claude"
-cmd = "gassy start --role mayor"
-skills = ["orchestrate", "plan"]
-
-[agents.budget]
-monthly = 100.0
-
-[[agents]]
-id = "engineer"
-role = "specialist"
-runtime = "exec"
-provider = "claude"
-cmd = "gassy start --role engineer"
-skills = ["echo", "build", "test"]
-
-[agents.budget]
-monthly = 50.0
-
-[network]
-mayor_url = "http://localhost:8081"
-engineer_url = "http://localhost:8084"
-
+# Default runtime settings
 [runtime.defaults]
 heartbeat_interval = "30s"
 startup_timeout = "60s"
+
+# Port range for agent allocation
+[runtime.port_range]
+min = 8080
+max = 9000
+
+# Agent registry
+# Each agent's role maps to a directory in config/{role}/
+
+[[agents]]
+id = "mayor"
+role = "mayor"           # Maps to config/mayor/
+cmd = "mayor"            # Container command
+
+[[agents]]
+id = "engineer"
+role = "engineer"        # Maps to config/engineer/
+cmd = "engineer"         # Container command
+
+# Network configuration (for discovery)
+[network]
+# Agent URLs are assigned dynamically from port_range
+# Use supervisor registry for discovery: GET /registry/discover?skill={skill}

@@ -46,16 +46,31 @@ Available agents:
 // CLAUDE.md Generation
 // =============================================================================
 
-interface SkillConfig {
+interface ManifestConfig {
+  name: string;
+  role: string;
+  description: string;
+  version?: string;
+}
+
+interface SkillDefinition {
+  name: string;
+  description: string;
+  triggers?: string[];
+}
+
+interface SkillsConfig {
   name: string;
   role: string;
   description: string;
   system_prompt?: string;
-  skills?: Array<{ name: string; description: string }>;
+  skills?: SkillDefinition[];
 }
 
 async function generateCLAUDEMd(agentRole: string, configDir: string): Promise<void> {
-  const configPath = resolve(configDir, `${agentRole}/skill.yaml`);
+  const manifestPath = resolve(configDir, `${agentRole}/manifest.yaml`);
+  const skillsPath = resolve(configDir, `${agentRole}/skills.yaml`);
+  const systemMdPath = resolve(configDir, `${agentRole}/system.md`);
   const appDir = "/app";
 
   // Ensure /app directory exists
@@ -63,40 +78,68 @@ async function generateCLAUDEMd(agentRole: string, configDir: string): Promise<v
     mkdirSync(appDir, { recursive: true });
   }
 
-  let claudeMdContent = "";
+  let agentName = agentRole;
+  let agentDescription = "";
+  let skills: SkillDefinition[] = [];
+  let systemPrompt = "";
 
-  if (existsSync(configPath)) {
+  // Read manifest.yaml for metadata
+  if (existsSync(manifestPath)) {
     try {
-      const fileContent = readFileSync(configPath, "utf-8");
-      const config = yaml.parse(fileContent) as SkillConfig;
-
-      // Build CLAUDE.md from config
-      claudeMdContent = `# ${config.name} Agent\n\n`;
-      claudeMdContent += `${config.description}\n\n`;
-
-      if (config.skills && config.skills.length > 0) {
-        claudeMdContent += `## Skills\n\n`;
-        for (const skill of config.skills) {
-          claudeMdContent += `- ${skill.name}: ${skill.description}\n`;
-        }
-        claudeMdContent += "\n";
-      }
-
-      if (config.system_prompt) {
-        claudeMdContent += `## System Prompt\n\n${config.system_prompt}\n`;
-      }
+      const manifestContent = readFileSync(manifestPath, "utf-8");
+      const manifest = yaml.parse(manifestContent) as ManifestConfig;
+      agentName = manifest.name || agentRole;
+      agentDescription = manifest.description || "";
     } catch (error) {
-      console.warn(`Failed to read config from ${configPath}: ${error}`);
+      console.warn(`Failed to read manifest from ${manifestPath}: ${error}`);
     }
   }
 
-  // Always include basic workspace info
-  if (!claudeMdContent) {
-    claudeMdContent = `# ${agentRole} Agent\n\n`;
-    claudeMdContent += `Working directory: /app\n\n`;
+  // Read skills.yaml for skills and optional system_prompt
+  if (existsSync(skillsPath)) {
+    try {
+      const skillsContent = readFileSync(skillsPath, "utf-8");
+      const skillsConfig = yaml.parse(skillsContent) as SkillsConfig;
+      skills = skillsConfig.skills || [];
+      // Use system_prompt from skills.yaml if system.md doesn't exist
+      if (!existsSync(systemMdPath)) {
+        systemPrompt = skillsConfig.system_prompt || "";
+      }
+    } catch (error) {
+      console.warn(`Failed to read skills from ${skillsPath}: ${error}`);
+    }
   }
 
-  // Add workspace instructions
+  // Read system.md for system prompt (overrides skills.yaml system_prompt)
+  if (existsSync(systemMdPath)) {
+    try {
+      systemPrompt = readFileSync(systemMdPath, "utf-8");
+    } catch (error) {
+      console.warn(`Failed to read system.md from ${systemMdPath}: ${error}`);
+    }
+  }
+
+  // Build CLAUDE.md content
+  let claudeMdContent = `# ${agentName} Agent\n\n`;
+  claudeMdContent += `${agentDescription}\n\n`;
+
+  if (skills.length > 0) {
+    claudeMdContent += `## Skills\n\n`;
+    for (const skill of skills) {
+      claudeMdContent += `- ${skill.name}: ${skill.description}`;
+      if (skill.triggers && skill.triggers.length > 0) {
+        claudeMdContent += ` (triggers: ${skill.triggers.join(", ")})`;
+      }
+      claudeMdContent += "\n";
+    }
+    claudeMdContent += "\n";
+  }
+
+  if (systemPrompt) {
+    claudeMdContent += `## System Prompt\n\n${systemPrompt}\n`;
+  }
+
+  // Always include basic workspace info
   claudeMdContent += `\n## Workspace\n\n`;
   claudeMdContent += `- Working directory: /app\n`;
   claudeMdContent += `- Claude Code executable: /app/gassy-agent\n`;
@@ -464,8 +507,9 @@ async function main() {
   console.log(`Base URL: ${env.ANTHROPIC_BASE_URL || "default"}`);
 
   // Create config dir path for CLAUDE.md generation
-  // __dirname is /app/dist when running in container, config is at /app/config
-  const configDir = resolve(__dirname, "..", "config");
+  // __dirname is /app/dist when running in container, config is at /app/config/{role}/
+  // New structure: gassy/config/{role}/manifest.yaml, skills.yaml, system.md
+  const configDir = resolve(__dirname, "..", "..", "config");
 
   // Generate CLAUDE.md from config before creating session
   await generateCLAUDEMd(env.AGENT_ROLE, configDir);

@@ -1,0 +1,20 @@
+skills:
+  - name: orchestration
+    description: Coordinate tasks between agents
+    triggers:
+      - task coordination
+      - agent management
+      - workflow design
+  - name: delegation
+    description: Delegate tasks to the engineer agent
+    triggers:
+      - coding requests
+      - testing requests
+      - build requests
+      - debug requests
+  - name: answering
+    description: Answer questions directly
+    triggers:
+      - questions
+      - explanations
+      - status updates

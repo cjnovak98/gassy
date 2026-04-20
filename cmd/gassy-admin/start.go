@@ -126,7 +126,7 @@ func startAgentContainer(agent city.AgentConfig, supervisorPort string) error {
 		"--label", "gassy=true",
 		"--network=host",
 		"-p", fmt.Sprintf("%d:%d", port, port),
-		"-e", "AGENT_ROLE=" + agent.ID,
+		"-e", "AGENT_ROLE=" + agent.Cmd,
 		"-e", fmt.Sprintf("PORT=%d", port),
 		"-e", "SUPERVISOR_URL=http://127.0.0.1:"+supervisorPort,
 		"--env-file", envFile,
