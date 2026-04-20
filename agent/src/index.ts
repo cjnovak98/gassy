@@ -532,10 +532,10 @@ async function main() {
   // Start A2A server with the persistent session
   const server = await createA2AServer(env.PORT, env.AGENT_ROLE, session);
 
-  // Mayor gets a web UI on PORT+1
-  if (env.AGENT_ROLE === "mayor") {
-    await createMayorWebUI(env.PORT);
-  }
+  // Mayor gets a web UI on PORT+1 (disabled for now to avoid port conflicts)
+  // if (env.AGENT_ROLE === "mayor") {
+  //   await createMayorWebUI(env.PORT);
+  // }
 
   console.log(`Agent "${env.AGENT_ROLE}" is ready and listening on port ${env.PORT}`);
 
