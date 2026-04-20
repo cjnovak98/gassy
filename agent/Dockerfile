@@ -17,15 +17,15 @@ COPY go.mod go.sum* ./
 # Download dependencies
 RUN go mod download
 
-# Copy supervisor source from gassy root
+# Copy all source needed for builds
 COPY cmd/supervisor/ ./cmd/supervisor/
+COPY cmd/gassy/ ./cmd/gassy/
+COPY internal/ ./internal/
 
 # Build the supervisor binary
 RUN CGO_ENABLED=0 GOOS=linux go build -o supervisor ./cmd/supervisor/
 
 # Build the gassy CLI
-COPY cmd/gassy/ ./cmd/gassy/
-COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=linux go build -o gassy ./cmd/gassy/
 
 # =============================================================================
