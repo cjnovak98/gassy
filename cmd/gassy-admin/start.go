@@ -145,16 +145,16 @@ func getAgentPort(agent city.AgentConfig) int {
 	case "mayor":
 		return 8080
 	case "engineer":
-		return 8081
-	case "designer":
 		return 8082
+	case "designer":
+		return 8083
 	default:
 		// Use hash of ID for consistent port assignment
 		hash := 0
 		for _, c := range agent.ID {
 			hash += int(c)
 		}
-		return 8083 + (hash % 10)
+		return 8084 + (hash % 10)
 	}
 }
 
