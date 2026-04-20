@@ -10,7 +10,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy the supervisor source (path is relative to build context /workspace/group/gassy)
-COPY cmd/supervisor/main.go ./cmd/supervisor/
+COPY cmd/supervisor/ ./cmd/supervisor/
+COPY internal/ ./internal/
 
 # Build the supervisor binary (static build preferred)
 RUN CGO_ENABLED=0 go build -ldflags="-extldflags=-static" -o /supervisor ./cmd/supervisor/

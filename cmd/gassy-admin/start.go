@@ -42,7 +42,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start supervisor container
-	if err := startSupervisor(filepath.Dir(cityFile)); err != nil {
+	cityDir, err := filepath.Abs(filepath.Dir(cityFile))
+	if err != nil {
+		return fmt.Errorf("resolving city directory: %w", err)
+	}
+	if err := startSupervisor(cityDir); err != nil {
 		return fmt.Errorf("starting supervisor: %w", err)
 	}
 	fmt.Println("Started supervisor container")
