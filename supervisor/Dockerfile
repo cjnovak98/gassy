@@ -51,8 +51,9 @@ ENV PODMAN_SOCKET=/run/user/1000/podman/podman.sock
 # Set working directory
 WORKDIR /workspace/group/gassy
 
-# Switch to non-root user
-USER nodeapp
+# Run as root for now (podman socket access requires it)
+# The supervisor binary itself doesn't need root, but podman commands do
+USER root
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
