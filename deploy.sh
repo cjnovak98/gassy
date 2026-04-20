@@ -64,10 +64,6 @@ ssh -i "$SSH_KEY" "$VM_HOST" "
     echo 'Installing CLI binaries...'
     make install
 
-    echo 'Restarting containers with new image...'
-    cd /home/cnovak/gassy
-    /var/home/cnovak/go/bin/gassy-admin rebuild
-
     echo 'Deployment complete!'
 "
 

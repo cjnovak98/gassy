@@ -1,4 +1,4 @@
-.PHONY: help build build-agent build-all install test validate clean rebuild
+.PHONY: help build build-agent build-all install test validate clean
 
 # Detect Go installation - support non-standard GOPATH setups like /home/cnovak/go
 GOCMD := go
@@ -16,7 +16,6 @@ help:
 	@echo "  make build-agent - Build TypeScript agent"
 	@echo "  make build-all - Build both CLI and agent (no install)"
 	@echo "  make install - Install CLI binaries to $(GOBIN)"
-	@echo "  make rebuild - Build agent image and restart containers"
 	@echo "  make test    - Run Go unit tests"
 	@echo "  make validate - Run end-to-end PoC demo test"
 	@echo "  make clean   - Remove built binaries and tidy modules"
@@ -34,10 +33,6 @@ install: build build-agent
 	$(GOCMD) install ./cmd/gassy/
 	$(GOCMD) install ./cmd/gassy-admin/
 	@echo "Installed to $(GOBIN)"
-
-rebuild: build-agent
-	@echo "Restarting containers with new image..."
-	$(GOBIN)/gassy-admin rebuild
 
 test:
 	go test -v ./internal/...
