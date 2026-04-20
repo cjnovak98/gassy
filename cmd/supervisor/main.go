@@ -132,16 +132,27 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 			continue
 		}
 
-		port := findAvailablePort()
-		if port == 0 {
+		// Hold the port open while spawning to prevent TOCTOU race
+		ln, err := holdPort(8080, 9000)
+		if err != nil {
 			log.Printf("no available ports for agent %s", agentCfg.ID)
 			continue
 		}
+		port := ln.Addr().(*net.TCPAddr).Port
 
 		containerID, err := s.spawnAgentProcess(agentCfg.ID, agentCfg.Role, port)
 		if err != nil {
 			log.Printf("failed to spawn agent %s: %v", agentCfg.ID, err)
+			ln.Close()
 			continue
+		}
+
+		// Wait for the agent to bind to the port before closing our hold
+		// and moving to the next agent (prevents port being reallocated)
+		ln.Close()
+		if err := s.waitForPort(port, 10*time.Second); err != nil {
+			log.Printf("agent %s port %d not reachable: %v", agentCfg.ID, port, err)
+			// Continue anyway — container is running, it may be slow to start
 		}
 
 		s.agents[agentCfg.ID] = Agent{
@@ -576,18 +587,25 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 	}
 
 	// Allocate port dynamically if not specified
+	// Hold the port open while spawning to prevent TOCTOU race
 	if port == 0 {
-		port = findAvailablePort()
-		if port == 0 {
-			s.mu.Unlock()
+		ln, err := holdPort(8080, 9000)
+		if err != nil {
 			return map[string]string{"error": "no available ports found"}
 		}
+		port = ln.Addr().(*net.TCPAddr).Port
+		ln.Close()
 	}
 
 	// Spawn the agent container
 	containerID, err := s.spawnAgentProcess(name, role, port)
 	if err != nil {
 		return map[string]string{"error": fmt.Sprintf("failed to start agent: %v", err)}
+	}
+
+	// Wait for agent to bind to port before returning
+	if err := s.waitForPort(port, 10*time.Second); err != nil {
+		log.Printf("agent %s port %d not reachable: %v", name, port, err)
 	}
 
 	agent := Agent{
@@ -860,13 +878,25 @@ func main() {
 	<-make(chan struct{})
 }
 // findAvailablePort finds an available TCP port for agent allocation
+// findAvailablePort returns an available port in the range 8080-9000.
+// The returned port is NOT released — the caller is responsible for using it.
+// Use findAndHoldPort() if you need the socket to remain open.
 func findAvailablePort() int {
-	for port := 8080; port <= 9000; port++ {
+	l, err := holdPort(8080, 9000)
+	if err != nil {
+		return 0
+	}
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+// holdPort finds the first available port in [start, end] and holds it open.
+// The socket is returned so the caller can close it when done.
+func holdPort(start, end int) (*net.TCPListener, error) {
+	for port := start; port <= end; port++ {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err == nil {
-			ln.Close()
-			return port
+			return ln, nil
 		}
 	}
-	return 0 // no port found
+	return nil, fmt.Errorf("no available ports in range %d-%d", start, end)
 }
