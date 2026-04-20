@@ -588,6 +588,7 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 
 	// Allocate port dynamically if not specified
 	// Hold the port open while spawning to prevent TOCTOU race
+	var containerID string
 	if port == 0 {
 		ln, err := holdPort(8080, 9000)
 		if err != nil {
@@ -596,7 +597,8 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 		port = ln.Addr().(*net.TCPAddr).Port
 
 		// Spawn agent while holding the port to prevent TOCTOU race
-		containerID, err := s.spawnAgentProcess(name, role, port)
+		var err error
+		containerID, err = s.spawnAgentProcess(name, role, port)
 		if err != nil {
 			ln.Close()
 			return map[string]string{"error": fmt.Sprintf("failed to start agent: %v", err)}
@@ -604,6 +606,16 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 
 		// Wait for agent to bind, then release the held socket
 		ln.Close()
+		if err := s.waitForPort(port, 10*time.Second); err != nil {
+			log.Printf("agent %s port %d not reachable: %v", name, port, err)
+		}
+	} else {
+		// Port specified by user, spawn without holding
+		var err error
+		containerID, err = s.spawnAgentProcess(name, role, port)
+		if err != nil {
+			return map[string]string{"error": fmt.Sprintf("failed to start agent: %v", err)}
+		}
 		if err := s.waitForPort(port, 10*time.Second); err != nil {
 			log.Printf("agent %s port %d not reachable: %v", name, port, err)
 		}
