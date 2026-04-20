@@ -132,12 +132,26 @@ func startSupervisor() error {
 	ensurePodmanSocket()
 
 	// Run supervisor on the HOST (not in a container) so it can spawn containers
-	// The supervisor binary should be in PATH or GOBIN
-	gobin := os.Getenv("GOBIN")
-	if gobin == "" {
-		gobin = os.Getenv("GOPATH") + "/bin"
+	// Find supervisor binary - check various locations
+	var supervisorBin string
+	paths := []string{
+		os.Getenv("GOBIN") + "/supervisor",
+		os.Getenv("GOPATH") + "/bin/supervisor",
+		os.Getenv("HOME") + "/go/bin/supervisor",
+		"/var/home/cnovak/go/bin/supervisor",
+		"/usr/local/bin/supervisor",
 	}
-	supervisorBin := gobin + "/supervisor"
+	for _, p := range paths {
+		if strings.HasPrefix(p, "/") { // Only check absolute paths
+			if _, err := os.Stat(p); err == nil {
+				supervisorBin = p
+				break
+			}
+		}
+	}
+	if supervisorBin == "" {
+		return fmt.Errorf("supervisor binary not found (checked: GOBIN, GOPATH/bin, ~/go/bin)")
+	}
 
 	// Check if supervisor binary exists
 	if _, err := os.Stat(supervisorBin); os.IsNotExist(err) {
