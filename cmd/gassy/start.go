@@ -51,7 +51,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("agent %q not found in city config", args[0])
 		}
 
-		prov = getProvider(agent.Provider)
+		prov = getProvider(agent.Runtime)
 		ctx := context.Background()
 
 		if err := prov.Start(ctx, agent.ID, agent.Cmd); err != nil {

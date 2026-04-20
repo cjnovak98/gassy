@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -29,11 +30,20 @@ var supervisorListCmd = &cobra.Command{
 }
 
 var supervisorHireCmd = &cobra.Command{
-	Use:   "hire [name] [binary] [port] [skills...]",
+	Use:   "hire [name]",
 	Short: "Hire a new agent",
-	Args:  cobra.MinimumNArgs(3),
-	RunE:  runSupervisorHire,
+	Long: `Hire a new agent by name. If the agent is defined in city.toml, its
+configuration is used. Otherwise, provide --role and --skills to define a new agent.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSupervisorHire,
 }
+
+var (
+	hireRole   string
+	hireSkills string // comma-separated skills
+	hirePort   int
+	hireCity   string
+)
 
 var supervisorFireCmd = &cobra.Command{
 	Use:   "fire [name]",
@@ -51,6 +61,11 @@ var supervisorStartCmd = &cobra.Command{
 func init() {
 	supervisorCmd.AddCommand(supervisorListCmd, supervisorHireCmd, supervisorFireCmd, supervisorStartCmd)
 	rootCmd.AddCommand(supervisorCmd)
+
+	supervisorHireCmd.Flags().StringVar(&hireRole, "role", "", "Role for the new agent (required if agent not in city.toml)")
+	supervisorHireCmd.Flags().StringVar(&hireSkills, "skills", "", "Comma-separated skills for the new agent")
+	supervisorHireCmd.Flags().IntVar(&hirePort, "port", 0, "Port for the new agent (auto-detected from city.toml if available)")
+	supervisorHireCmd.Flags().StringVarP(&hireCity, "city", "c", "city.toml", "Path to city.toml")
 }
 
 func sendHTTPRequest(path string, body map[string]interface{}) ([]map[string]interface{}, error) {
@@ -122,17 +137,47 @@ func runSupervisorList(cmd *cobra.Command, args []string) error {
 
 func runSupervisorHire(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	binary := args[1]
-	portInt, err := strconv.Atoi(args[2])
+
+	// Parse city config
+	cityCfg, err := ParseFile(hireCity)
 	if err != nil {
-		return fmt.Errorf("invalid port: %w", err)
+		return fmt.Errorf("parsing city config: %w", err)
 	}
-	skills := args[3:]
+
+	// Look up agent in city.toml
+	agentCfg := cityCfg.GetAgent(name)
+	role := hireRole
+	skills := parseSkills(hireSkills)
+	port := hirePort
+
+	if agentCfg.ID != "" {
+		// Agent found in city.toml - use its config
+		if role == "" {
+			role = agentCfg.Role
+		}
+		if len(skills) == 0 {
+			skills = agentCfg.Skills
+		}
+		// Extract port from network config if not provided
+		if port == 0 {
+			port = extractPortFromNetwork(cityCfg.Network, name)
+		}
+		fmt.Printf("Hiring agent %q from city.toml (role=%q, skills=%v)\n", name, role, skills)
+	} else {
+		// Agent not in city.toml - use provided flags
+		if role == "" {
+			return fmt.Errorf("agent %q not found in city.toml: --role is required for new agents", name)
+		}
+		if port == 0 {
+			return fmt.Errorf("agent %q not found in city.toml: --port is required for new agents", name)
+		}
+		fmt.Printf("Hiring new agent %q (role=%q, skills=%v)\n", name, role, skills)
+	}
 
 	_, err = sendHTTPRequest("/supervisor/hire", map[string]interface{}{
 		"name":   name,
-		"binary": binary,
-		"port":   portInt,
+		"role":   role,
+		"port":   port,
 		"skills": skills,
 	})
 	if err != nil {
@@ -141,6 +186,49 @@ func runSupervisorHire(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Successfully hired agent: %s\n", name)
 	return nil
+}
+
+func parseSkills(skillsStr string) []string {
+	if skillsStr == "" {
+		return nil
+	}
+	var skills []string
+	for _, s := range strings.Split(skillsStr, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			skills = append(skills, s)
+		}
+	}
+	return skills
+}
+
+func extractPortFromNetwork(network NetworkConfig, agentID string) int {
+	// Check network config for {agent_id}_url fields
+	urlField := agentID + "_url"
+	switch urlField {
+	case "mayor_url":
+		return extractPort(network.MayorURL)
+	case "engineer_url":
+		return extractPort(network.EngineerURL)
+	case "designer_url":
+		return extractPort(network.DesignerURL)
+	}
+	return 0
+}
+
+func extractPort(urlStr string) int {
+	if urlStr == "" {
+		return 0
+	}
+	// URL format: http://localhost:8084
+	if idx := strings.LastIndex(urlStr, ":"); idx >= 0 {
+		portStr := strings.TrimPrefix(urlStr[idx:], ":")
+		portStr = strings.TrimSuffix(portStr, "/")
+		if port, err := strconv.Atoi(portStr); err == nil {
+			return port
+		}
+	}
+	return 0
 }
 
 func runSupervisorFire(cmd *cobra.Command, args []string) error {

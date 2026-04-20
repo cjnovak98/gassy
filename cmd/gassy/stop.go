@@ -35,7 +35,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("agent %q not found in city config", args[0])
 		}
 
-		prov := getProvider(agent.Provider)
+		prov := getProvider(agent.Runtime)
 		if err := prov.Stop(ctx, agent.ID); err != nil {
 			return fmt.Errorf("stopping agent %s: %w", agent.ID, err)
 		}
@@ -46,7 +46,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 
 	// Stop all agents
 	for _, agent := range city.Agents {
-		prov := getProvider(agent.Provider)
+		prov := getProvider(agent.Runtime)
 		if err := prov.Stop(ctx, agent.ID); err != nil {
 			// Agent might not be running, that's ok
 			continue

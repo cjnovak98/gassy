@@ -34,7 +34,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("agent %q not found in city config", args[0])
 		}
 
-		prov := getProvider(agent.Provider)
+		prov := getProvider(agent.Runtime)
 		st, err := prov.Status(ctx, agent.ID)
 		if err != nil {
 			fmt.Printf("Agent %s: error - %v\n", agent.ID, err)
@@ -55,7 +55,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("------------------------------------------------------------")
 
 	for _, agent := range city.Agents {
-		prov := getProvider(agent.Provider)
+		prov := getProvider(agent.Runtime)
 		st, err := prov.Status(ctx, agent.ID)
 
 		status := "unknown"
@@ -72,7 +72,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			status = "stopped"
 		}
 
-		fmt.Printf("%-20s %-10s %-10s %-10s\n", agent.ID, agent.Provider, status, pid)
+		fmt.Printf("%-20s %-10s %-10s %-10s\n", agent.ID, agent.Runtime, status, pid)
 	}
 
 	return nil

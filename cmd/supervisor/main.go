@@ -376,6 +376,26 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 		}
 	})
 
+	mux.HandleFunc("/supervisor/hire", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Name   string   `json:"name"`
+			Role   string   `json:"role"`
+			Skills []string `json:"skills"`
+			Port   int      `json:"port"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		result := s.hireAgent(req.Name, req.Role, req.Port, req.Skills)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]map[string]string{result})
+	})
+
 	ln, err := net.Listen("tcp", ":9091")
 	if err != nil {
 		log.Printf("http listen error: %v", err)
@@ -396,7 +416,7 @@ func (s *Supervisor) handleConnection(conn net.Conn) {
 	var cmd struct {
 		Action  string   `json:"action"`
 		Name    string   `json:"name,omitempty"`
-		Binary  string   `json:"binary,omitempty"`
+		Role    string   `json:"role,omitempty"`
 		Port    int      `json:"port,omitempty"`
 		Skills  []string `json:"skills,omitempty"`
 		CardURL string   `json:"cardURL,omitempty"`
@@ -413,7 +433,7 @@ func (s *Supervisor) handleConnection(conn net.Conn) {
 	case "list":
 		resp = s.listAgents()
 	case "hire":
-		resp = s.hireAgent(cmd.Name, cmd.Binary, cmd.Port, cmd.Skills)
+		resp = s.hireAgent(cmd.Name, cmd.Role, cmd.Port, cmd.Skills)
 	case "fire":
 		resp = s.fireAgent(cmd.Name)
 	case "register":
@@ -489,7 +509,7 @@ func (s *Supervisor) saveStateLocked() {
 }
 
 // hireAgent adds a new agent to the registry and starts it
-func (s *Supervisor) hireAgent(name, binary string, port int, skills []string) map[string]string {
+func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -505,7 +525,8 @@ func (s *Supervisor) hireAgent(name, binary string, port int, skills []string) m
 
 	agent := Agent{
 		Name:        name,
-		Binary:      binary,
+		Role:        role,
+		Binary:      name, // binary name is derived from agent name
 		Port:        port,
 		Skills:      skills,
 		ContainerID: containerID,
