@@ -64,7 +64,8 @@ ssh -i "$SSH_KEY" "$VM_HOST" "
     make install
 
     echo 'Restarting containers with new image...'
-    make rebuild
+    cd /home/cnovak/gassy
+    /home/cnovak/go/bin/gassy-admin rebuild
 
     echo 'Deployment complete!'
 "
