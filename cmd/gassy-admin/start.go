@@ -137,6 +137,7 @@ func startSupervisor() error {
 		"--name", "gassy-supervisor",
 		"--label", "gassy=true",
 		"--network=host",
+		"--userns=host",
 		"--volume=" + socketPath + ":" + socketPath,
 		"--env-file", envFile,
 		"localhost:5000/gassy/supervisor:latest",
