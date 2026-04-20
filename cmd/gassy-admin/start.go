@@ -106,6 +106,7 @@ func startSupervisor() error {
 		"--name", "gassy-supervisor",
 		"--label", "gassy=true",
 		"--network=host",
+		"--volume=/run/podman/podman.sock:/run/podman/podman.sock",
 		"--env-file", envFile,
 		"localhost:5000/gassy/agent:latest",
 		"supervisor",
