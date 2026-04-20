@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -158,20 +157,15 @@ func runSupervisorHire(cmd *cobra.Command, args []string) error {
 		if len(skills) == 0 {
 			skills = agentCfg.Skills
 		}
-		// Extract port from network config if not provided
-		if port == 0 {
-			port = extractPortFromNetwork(cityCfg.Network, name)
-		}
+		// Port is passed through; if 0, supervisor will allocate dynamically
 		fmt.Printf("Hiring agent %q from city.toml (role=%q, skills=%v)\n", name, role, skills)
 	} else {
 		// Agent not in city.toml - use provided flags
 		if role == "" {
 			return fmt.Errorf("agent %q not found in city.toml: --role is required for new agents", name)
 		}
-		if port == 0 {
-			return fmt.Errorf("agent %q not found in city.toml: --port is required for new agents", name)
-		}
-		fmt.Printf("Hiring new agent %q (role=%q, skills=%v)\n", name, role, skills)
+		// Port will be allocated dynamically if not provided
+		fmt.Printf("Hiring new agent %q (role=%q, port=%d, skills=%v)\n", name, role, port, skills)
 	}
 
 	_, err = sendHTTPRequest("/supervisor/hire", map[string]interface{}{
@@ -200,35 +194,6 @@ func parseSkills(skillsStr string) []string {
 		}
 	}
 	return skills
-}
-
-func extractPortFromNetwork(network NetworkConfig, agentID string) int {
-	// Check network config for {agent_id}_url fields
-	urlField := agentID + "_url"
-	switch urlField {
-	case "mayor_url":
-		return extractPort(network.MayorURL)
-	case "engineer_url":
-		return extractPort(network.EngineerURL)
-	case "designer_url":
-		return extractPort(network.DesignerURL)
-	}
-	return 0
-}
-
-func extractPort(urlStr string) int {
-	if urlStr == "" {
-		return 0
-	}
-	// URL format: http://localhost:8084
-	if idx := strings.LastIndex(urlStr, ":"); idx >= 0 {
-		portStr := strings.TrimPrefix(urlStr[idx:], ":")
-		portStr = strings.TrimSuffix(portStr, "/")
-		if port, err := strconv.Atoi(portStr); err == nil {
-			return port
-		}
-	}
-	return 0
 }
 
 func runSupervisorFire(cmd *cobra.Command, args []string) error {

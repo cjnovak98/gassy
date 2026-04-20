@@ -517,6 +517,15 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 		return map[string]string{"error": "agent already exists"}
 	}
 
+	// Allocate port dynamically if not provided
+	if port == 0 {
+		var err error
+		port, err = findAvailablePort(8080, 9000)
+		if err != nil {
+			return map[string]string{"error": fmt.Sprintf("no available port in range 8080-9000: %v", err)}
+		}
+	}
+
 	// Spawn the agent container
 	containerID, err := s.spawnAgentProcess(name, port)
 	if err != nil {
@@ -539,6 +548,26 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 	s.saveStateLocked()
 
 	return map[string]string{"success": "agent hired"}
+}
+
+// findAvailablePort finds an available port in the given range
+func findAvailablePort(min, max int) (int, error) {
+	for port := min; port <= max; port++ {
+		if isPortAvailable(port) {
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("no available ports in range %d-%d", min, max)
+}
+
+// isPortAvailable checks if a port is available for binding
+func isPortAvailable(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	ln.Close()
+	return true
 }
 
 // getPodmanSocket returns the podman socket path to use
