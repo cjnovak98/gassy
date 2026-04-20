@@ -157,7 +157,7 @@ func startAllContainers() error {
 	supervisorPort := "9091"
 
 	// Start supervisor first
-	if err := startSupervisor(); err != nil {
+	if err := startSupervisor(filepath.Dir(cityFile)); err != nil {
 		return fmt.Errorf("starting supervisor: %w", err)
 	}
 	fmt.Println("Started supervisor container")

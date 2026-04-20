@@ -46,10 +46,10 @@ ssh -i "$SSH_KEY" "$VM_HOST" "
     cd /home/cnovak/gassy
 
     # Set up Go environment
-    export PATH=/home/cnovak/go/bin:/var/home/cnovak/go/bin:\$PATH
-    export GOROOT=/home/cnovak/go
+    export GOROOT=/usr/lib/golang
     export GOPATH=/var/home/cnovak/go
     export GOBIN=/var/home/cnovak/go/bin
+    export PATH=\$GOBIN:/usr/bin:\$PATH
     mkdir -p \$GOPATH \$GOBIN
 
     # Restore .env if it exists in old directory
