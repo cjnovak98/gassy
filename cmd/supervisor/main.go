@@ -741,7 +741,11 @@ func loadEnv() {
 	locations := []string{
 		".env",
 		"/workspace/group/gassy/.env",
-		filepath.Join(filepath.Dir(os.Executable()), ".env"),
+	}
+
+	// Also try executable directory
+	if execPath, err := os.Executable(); err == nil {
+		locations = append(locations, filepath.Join(filepath.Dir(execPath), ".env"))
 	}
 
 	for _, loc := range locations {
