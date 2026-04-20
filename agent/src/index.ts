@@ -54,8 +54,8 @@ interface SkillConfig {
   skills?: Array<{ name: string; description: string }>;
 }
 
-async function generateCLAUDEMd(agentRole: string): Promise<void> {
-  const configPath = resolve(__dirname, `../../config/${agentRole}/skill.yaml`);
+async function generateCLAUDEMd(agentRole: string, configDir: string): Promise<void> {
+  const configPath = resolve(configDir, `${agentRole}/skill.yaml`);
   const appDir = "/app";
 
   // Ensure /app directory exists
@@ -463,8 +463,12 @@ async function main() {
   console.log(`Model: ${env.ANTHROPIC_MODEL}`);
   console.log(`Base URL: ${env.ANTHROPIC_BASE_URL || "default"}`);
 
+  // Create config dir path for CLAUDE.md generation
+  // __dirname is /app/dist when running in container, config is at /app/config
+  const configDir = resolve(__dirname, "..", "config");
+
   // Generate CLAUDE.md from config before creating session
-  await generateCLAUDEMd(env.AGENT_ROLE);
+  await generateCLAUDEMd(env.AGENT_ROLE, configDir);
 
   // Create persistent session using unstable_v2_createSession
   const session = await unstable_v2_createSession({
