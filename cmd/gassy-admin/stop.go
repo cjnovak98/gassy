@@ -31,8 +31,8 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return stopContainer(containerName)
 	}
 
-	// Stop all gassy containers (supervisor is now in a container again)
-	containers := []string{"gassy-supervisor", "gassy-mayor", "gassy-engineer", "gassy-designer"}
+	// Stop all gassy containers (supervisor is a process on the host)
+	containers := []string{"gassy-mayor", "gassy-engineer", "gassy-designer"}
 	for _, c := range containers {
 		stopContainer(c) // ignore errors, container may not exist
 	}
@@ -42,7 +42,10 @@ func runStop(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Warning: error stopping containers: %v\n", err)
 	}
 
-	fmt.Println("All gassy containers stopped")
+	// Kill supervisor process
+	killSupervisorProcess()
+
+	fmt.Println("All gassy processes stopped")
 	return nil
 }
 
@@ -73,4 +76,18 @@ func stopContainer(name string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// killSupervisorProcess kills the supervisor process running on the host
+func killSupervisorProcess() {
+	// Try pkill first (more portable)
+	cmd := exec.Command("pkill", "-f", "supervisor")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		// If pkill fails, try killall
+		cmd := exec.Command("killall", "supervisor")
+		cmd.Run()
+	}
+	fmt.Println("Stopped supervisor process")
 }
