@@ -45,6 +45,7 @@ RUN npm install --include=dev
 # Copy source code
 COPY agent/tsconfig.json ./
 COPY agent/src/ ./src/
+COPY agent/config/ ./config/
 
 # Compile TypeScript
 RUN npm run build
@@ -66,6 +67,7 @@ WORKDIR /app
 COPY --from=builder --chown=nodeapp:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodeapp:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodeapp:nodejs /app/package.json ./
+COPY --from=builder --chown=nodeapp:nodejs /app/config ./config
 
 # Copy the supervisor binary from Go builder
 COPY --from=go-builder --chown=nodeapp:nodejs /build/supervisor ./supervisor

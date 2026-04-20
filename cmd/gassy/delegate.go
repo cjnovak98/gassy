@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/cjnovak98/gassy/internal/a2a"
 	"github.com/spf13/cobra"
@@ -76,8 +77,8 @@ func runDelegate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create A2A client
-	client := a2a.NewClient(agentURL)
+	// Create A2A client with extended timeout for delegation (may involve multiple agent hops)
+	client := a2a.NewClientWithTimeout(agentURL, 120*time.Second)
 
 	message := a2a.Message{
 		Role: "user",

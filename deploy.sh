@@ -63,9 +63,10 @@ ssh -i "$SSH_KEY" "$VM_HOST" "
     echo 'Installing CLI binaries...'
     make install
 
+    echo 'Restarting containers with new image...'
+    make rebuild
+
     echo 'Deployment complete!'
-    echo ''
-    echo 'To start services: gassy-admin start'
 "
 
 echo ""

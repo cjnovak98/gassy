@@ -8,20 +8,102 @@
  * Uses the Anthropic Agent SDK for API calls.
  */
 
-import { unstable_v2_prompt, type SDKSessionOptions } from "@anthropic-ai/claude-agent-sdk";
+import { unstable_v2_prompt, unstable_v2_createSession, unstable_v2_resumeSession, type SDKSessionOptions } from "@anthropic-ai/claude-agent-sdk";
 import Fastify, { FastifyInstance } from "fastify";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import yaml from "yaml";
 
 // =============================================================================
 // System Prompts
 // =============================================================================
 
 const SYSTEM_PROMPTS = {
-  engineer: `You are the Engineer agent in a multi-agent system called Gassy. The Mayor orchestrator delegates coding, testing, and build tasks to you via A2A. You have access to tools for reading, editing, and running files in your workspace. When given a task, complete it thoroughly and report back the results.`,
+  engineer: `You are the Engineer agent in a multi-agent system called Gassy. The Mayor orchestrator delegates coding, testing, and build tasks to you via A2A. You have access to tools for reading, editing, and running files in your workspace.
 
-  mayor: `You are the Mayor — an orchestrator agent in a multi-agent system called Gassy. Answer questions directly unless they require coding/testing, then delegate to an engineer agent via A2A. Your role is to coordinate the work between human requests and the engineer agent.`,
+Available tools:
+- /app/gassy agent list — List all available agents and their A2A URLs
+- /app/gassy delegate [agent-id] [prompt] — Send a task to a specific agent
+- /app/gassy delegate --skill [skill] [prompt] — Find an agent by skill and delegate
+
+When given a task, complete it thoroughly and report back the results.`,
+
+  mayor: `You are the Mayor — an orchestrator agent in a multi-agent system called Gassy. Your role is to coordinate the work between human requests and specialist agents.
+
+How to delegate work:
+1. Use /app/gassy agent list to see available agents, their URLs, and roles
+2. Use /app/gassy delegate [agent-id] [prompt] to send a task to a specific agent
+3. Or use /app/gassy delegate --skill [skill] [prompt] to find an agent by skill
+
+When you receive a request, determine if it requires coding/testing/building. If so, delegate to the engineer agent. For questions, explanations, or coordination tasks, respond directly.
+
+Available agents:
+- engineer: Handles coding, testing, and build tasks`,
 } as const;
+
+// =============================================================================
+// CLAUDE.md Generation
+// =============================================================================
+
+interface SkillConfig {
+  name: string;
+  role: string;
+  description: string;
+  system_prompt?: string;
+  skills?: Array<{ name: string; description: string }>;
+}
+
+async function generateCLAUDEMd(agentRole: string): Promise<void> {
+  const configPath = resolve(__dirname, `../../config/${agentRole}/skill.yaml`);
+  const appDir = "/app";
+
+  // Ensure /app directory exists
+  if (!existsSync(appDir)) {
+    mkdirSync(appDir, { recursive: true });
+  }
+
+  let claudeMdContent = "";
+
+  if (existsSync(configPath)) {
+    try {
+      const fileContent = readFileSync(configPath, "utf-8");
+      const config = yaml.parse(fileContent) as SkillConfig;
+
+      // Build CLAUDE.md from config
+      claudeMdContent = `# ${config.name} Agent\n\n`;
+      claudeMdContent += `${config.description}\n\n`;
+
+      if (config.skills && config.skills.length > 0) {
+        claudeMdContent += `## Skills\n\n`;
+        for (const skill of config.skills) {
+          claudeMdContent += `- ${skill.name}: ${skill.description}\n`;
+        }
+        claudeMdContent += "\n";
+      }
+
+      if (config.system_prompt) {
+        claudeMdContent += `## System Prompt\n\n${config.system_prompt}\n`;
+      }
+    } catch (error) {
+      console.warn(`Failed to read config from ${configPath}: ${error}`);
+    }
+  }
+
+  // Always include basic workspace info
+  if (!claudeMdContent) {
+    claudeMdContent = `# ${agentRole} Agent\n\n`;
+    claudeMdContent += `Working directory: /app\n\n`;
+  }
+
+  // Add workspace instructions
+  claudeMdContent += `\n## Workspace\n\n`;
+  claudeMdContent += `- Working directory: /app\n`;
+  claudeMdContent += `- Claude Code executable: /app/gassy-agent\n`;
+
+  writeFileSync(resolve(appDir, "CLAUDE.md"), claudeMdContent);
+  console.log(`Generated /app/CLAUDE.md for ${agentRole} agent`);
+}
 
 // =============================================================================
 // A2A Types (Agent-to-Agent Protocol)
@@ -61,7 +143,7 @@ interface A2AMessage {
 async function createA2AServer(
   port: number,
   agentRole: string,
-  sessionOptions: SDKSessionOptions
+  session: Awaited<ReturnType<typeof unstable_v2_createSession>>
 ): Promise<FastifyInstance> {
   const fastify = Fastify({
     logger: false,
@@ -168,16 +250,15 @@ async function createA2AServer(
         ? `${systemPrompt}\n\n${contextStr ? contextStr + "\n\n" : ""}User message: ${messageText}`
         : `${contextStr ? contextStr + "\n\n" : ""}User message: ${messageText}`;
 
-      // Call the agent SDK
-      const response = await unstable_v2_prompt(fullMessage, sessionOptions);
+      console.log(`[${agentRole}] Received prompt: ${messageText.substring(0, 200)}${messageText.length > 200 ? "..." : ""}`);
 
-      // Extract text from response
-      let responseText = "No response";
-      if (response.type === "result" && response.subtype === "success") {
-        responseText = response.result;
-      } else if (response.type === "result" && "error" in response) {
-        responseText = `Error: ${JSON.stringify(response)}`;
-      }
+      // Call the agent SDK using persistent session
+      const response = await session.send(fullMessage);
+
+      console.log(`[${agentRole}] SDK response type: ${typeof response}`);
+
+      // session.send() returns the result directly
+      const responseText = typeof response === "string" ? response : JSON.stringify(response);
 
       // For streaming, send as SSE
       if (isStreaming) {
@@ -375,14 +456,6 @@ async function main() {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const claudeBinaryPath = resolve(__dirname, "../node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude");
 
-  const sessionOptions: SDKSessionOptions = {
-    model: env.ANTHROPIC_MODEL,
-    env: sdkEnv,
-    pathToClaudeCodeExecutable: claudeBinaryPath,
-    permissionMode: "bypassPermissions",
-    allowDangerouslySkipPermissions: true,
-  };
-
   console.log(`Starting Gassy agent...`);
   console.log(`Role: ${env.AGENT_ROLE}`);
   console.log(`Port: ${env.PORT}`);
@@ -390,11 +463,27 @@ async function main() {
   console.log(`Model: ${env.ANTHROPIC_MODEL}`);
   console.log(`Base URL: ${env.ANTHROPIC_BASE_URL || "default"}`);
 
+  // Generate CLAUDE.md from config before creating session
+  await generateCLAUDEMd(env.AGENT_ROLE);
+
+  // Create persistent session using unstable_v2_createSession
+  const session = await unstable_v2_createSession({
+    model: env.ANTHROPIC_MODEL,
+    cwd: "/app",
+    settingSources: ["project"],  // Enable CLAUDE.md loading
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    env: sdkEnv,
+  });
+
+  const sessionId = session.sessionId;
+  console.log(`Session created: ${sessionId}`);
+
   // Register with supervisor
   await registerWithSupervisor(env.SUPERVISOR_URL, env.AGENT_ROLE, env.PORT);
 
-  // Start A2A server
-  const server = await createA2AServer(env.PORT, env.AGENT_ROLE, sessionOptions);
+  // Start A2A server with the persistent session
+  const server = await createA2AServer(env.PORT, env.AGENT_ROLE, session);
 
   // Mayor gets a web UI on PORT+1
   if (env.AGENT_ROLE === "mayor") {
@@ -406,6 +495,11 @@ async function main() {
   // Handle graceful shutdown
   const shutdown = async () => {
     console.log("Shutting down...");
+    try {
+      await session.close();
+    } catch (error) {
+      console.warn("Error closing session:", error);
+    }
     await server.close();
     process.exit(0);
   };
