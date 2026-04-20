@@ -131,37 +131,21 @@ func startSupervisor() error {
 	// Ensure podman socket is running for rootless podman
 	ensurePodmanSocket()
 
-	// Run supervisor on the HOST (not in a container) so it can spawn containers
-	// Find supervisor binary - check various locations
-	var supervisorBin string
-	paths := []string{
-		os.Getenv("GOBIN") + "/supervisor",
-		os.Getenv("GOPATH") + "/bin/supervisor",
-		os.Getenv("HOME") + "/go/bin/supervisor",
-		"/var/home/cnovak/go/bin/supervisor",
-		"/usr/local/bin/supervisor",
+	socketPath := "/run/user/1000/podman/podman.sock"
+	args := []string{
+		"run", "-d",
+		"--name", "gassy-supervisor",
+		"--label", "gassy=true",
+		"--network=host",
+		"--volume=" + socketPath + ":" + socketPath,
+		"--env-file", envFile,
+		"localhost:5000/gassy/supervisor:latest",
 	}
-	for _, p := range paths {
-		if strings.HasPrefix(p, "/") { // Only check absolute paths
-			if _, err := os.Stat(p); err == nil {
-				supervisorBin = p
-				break
-			}
-		}
-	}
-	if supervisorBin == "" {
-		return fmt.Errorf("supervisor binary not found (checked: GOBIN, GOPATH/bin, ~/go/bin)")
-	}
-
-	// Check if supervisor binary exists
-	if _, err := os.Stat(supervisorBin); os.IsNotExist(err) {
-		return fmt.Errorf("supervisor binary not found at %s (run 'go install ./cmd/supervisor/' to build)", supervisorBin)
-	}
-
-	// Start supervisor as a background process on the host
-	cmd := exec.Command(supervisorBin)
+	cmd := exec.Command("podman", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting supervisor: %w", err)
 	}
