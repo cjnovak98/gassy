@@ -30,7 +30,9 @@ RUN dnf install -y --nodocs \
 # Create nodeapp user with uid 1001
 RUN useradd -u 1001 -r -d /home/nodeapp -s /sbin/nologin \
     -c "Node Application" \
-    nodeapp
+    nodeapp && \
+    mkdir -m 755 /home/nodeapp && \
+    chown nodeapp:nodeapp /home/nodeapp
 
 # Create required directories
 RUN mkdir -p /workspace/group && chown nodeapp:nodeapp /workspace/group
