@@ -23,21 +23,28 @@ import fastifyStatic from "@fastify/static";
 const SYSTEM_PROMPTS = {
   engineer: `You are the Engineer agent in a multi-agent system called Gassy. The Mayor orchestrator delegates coding, testing, and build tasks to you via A2A. You have access to tools for reading, editing, and running files in your workspace.
 
-Available tools:
-- /app/gassy agent list — List all available agents and their A2A URLs
-- /app/gassy delegate [agent-id] [prompt] — Send a task to a specific agent
-- /app/gassy delegate --skill [skill] [prompt] — Find an agent by skill and delegate
+IMPORTANT - Task Handoffs:
+When you need to hand off work to another agent (like a designer), use the Bash tool to run the gassy CLI:
+  /app/gassy delegate --skill <skill> <task description>
+
+Examples:
+- /app/gassy delegate --skill design "Create a logo for my project"
+- /app/gassy delegate --skill writing "Write documentation for the API"
 
 When given a task, complete it thoroughly and report back the results.`,
 
   mayor: `You are the Mayor — an orchestrator agent in a multi-agent system called Gassy. Your role is to coordinate the work between human requests and specialist agents.
 
-How to delegate work:
-1. Use /app/gassy agent list to see available agents, their URLs, and roles
-2. Use /app/gassy delegate [agent-id] [prompt] to send a task to a specific agent
-3. Or use /app/gassy delegate --skill [skill] [prompt] to find an agent by skill
+IMPORTANT - Task Handoffs:
+When you need to delegate work to the engineer or other agents, use the Bash tool to run the gassy CLI:
+  /app/gassy delegate [agent-id] [prompt]  - Delegate to a specific agent
+  /app/gassy delegate --skill <skill> [prompt] - Find agent by skill and delegate
 
-When you receive a request, determine if it requires coding/testing/building. If so, delegate to the engineer agent. For questions, explanations, or coordination tasks, respond directly.
+Examples:
+- /app/gassy delegate engineer "Write a web server in Go"
+- /app/gassy delegate --skill design "Create a logo for my project"
+
+When you receive a request, determine if it requires coding/testing/building. If so, delegate to the engineer agent using Bash. For questions, explanations, or coordination tasks, respond directly.
 
 Available agents:
 - engineer: Handles coding, testing, and build tasks`,
@@ -244,6 +251,80 @@ async function createA2AServer(
     return { status: "ok", role: agentRole };
   });
 
+  // POST /tools/delegate - Agent tool for delegating to other agents
+  // This endpoint allows the agent's LLM to request delegation via tool call
+  fastify.post("/tools/delegate", async (request, reply) => {
+    const body = request.body as any;
+
+    if (!body || !body.function || !body.params) {
+      return {
+        jsonrpc: "2.0",
+        id: body?.id || "unknown",
+        error: { code: -32600, message: "Missing function or params" },
+      };
+    }
+
+    const { function: fn, params, id } = body;
+
+    try {
+      if (fn === "discover_agent_by_skill") {
+        const { skill } = params;
+        const result = await discoverAgentBySkill(process.env.SUPERVISOR_URL || "http://localhost:9091", skill, agentRole);
+        return {
+          jsonrpc: "2.0",
+          id,
+          result,
+        };
+      }
+
+      if (fn === "delegate_to_agent") {
+        const { agent_url, task, skill_hint } = params;
+        const result = await delegateToAgent(agent_url, task, agentRole, skill_hint);
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: { response: result },
+        };
+      }
+
+      if (fn === "delegate_by_skill") {
+        const { skill, task } = params;
+        // First discover agent by skill
+        const discovered = await discoverAgentBySkill(process.env.SUPERVISOR_URL || "http://localhost:9091", skill, agentRole);
+        if (!discovered) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32000, message: `No agent found with skill: ${skill}` },
+          };
+        }
+        // Then delegate to it
+        const result = await delegateToAgent(discovered.a2aUrl, task, agentRole, skill);
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: { response: result, agent_id: discovered.agentId, a2a_url: discovered.a2aUrl },
+        };
+      }
+
+      return {
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32601, message: `Unknown function: ${fn}` },
+      };
+    } catch (error) {
+      console.error(`[${agentRole}] Tool error:`, error);
+      return {
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32000,
+          message: error instanceof Error ? error.message : "Unknown error",
+        },
+      };
+    }
+  });
+
   // POST /a2a - A2A JSON-RPC endpoint
   fastify.post("/a2a", async (request, reply) => {
     const body = request.body as any;
@@ -309,6 +390,129 @@ async function createA2AServer(
         : `${contextStr ? contextStr + "\n\n" : ""}User message: ${messageText}`;
 
       console.log(`[${agentRole}] Received prompt: ${messageText.substring(0, 200)}${messageText.length > 200 ? "..." : ""}`);
+
+      // Keyword-based auto-delegation for mayor
+      const supervisorUrl = process.env.SUPERVISOR_URL || "http://localhost:9091";
+
+      // If message contains coding-related keywords, delegate to engineer
+      const codingKeywords = ["code", "write", "program", "script", "function", "class", "build", "compile", "debug", "api", "server", "web", "application", "software"];
+      const isCodingRequest = codingKeywords.some(kw => messageText.toLowerCase().includes(kw)) && !messageText.toLowerCase().includes("just answer");
+
+      // If message contains design/UI-related keywords, delegate to a designer agent
+      const designKeywords = ["design", "logo", "ui", "ux", "interface", "visual", "graphic", "brand", "style", "appearance", "color", "font"];
+
+      const isDesignRequest = designKeywords.some(kw => messageText.toLowerCase().includes(kw));
+
+      if (agentRole === "mayor" && isDesignRequest) {
+        console.log(`[${agentRole}] Detected design request, attempting delegation...`);
+        try {
+          const discovered = await discoverAgentBySkill(supervisorUrl, "design", agentRole);
+          if (discovered) {
+            console.log(`[${agentRole}] Delegating to designer at ${discovered.a2aUrl}`);
+            const delegateResult = await delegateToAgent(discovered.a2aUrl, messageText, agentRole, "design");
+
+            // Return delegation result as completion
+            if (isStreaming) {
+              reply.raw?.writeHead(200, {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+              });
+
+              const sessionId = `session-${body.id}`;
+              const taskId = `task-${body.id}`;
+
+              const taskEvent = {
+                kind: "task",
+                task: { id: taskId, sessionId: sessionId, status: { state: "working" } },
+              };
+              reply.raw?.write(`data: ${JSON.stringify(taskEvent)}\n\n`);
+
+              // Stream the delegation result
+              const textDeltaEvent = { kind: "textDelta", textDelta: delegateResult };
+              reply.raw?.write(`data: ${JSON.stringify(textDeltaEvent)}\n\n`);
+
+              const doneEvent = {
+                kind: "completion",
+                completion: { id: taskId, sessionId, message: delegateResult, status: { state: "completed" } },
+              };
+              reply.raw?.write(`data: ${JSON.stringify(doneEvent)}\n\n`);
+              reply.raw?.write(`data: [done]\n\n`);
+              reply.raw?.end();
+              return null;
+            }
+
+            return {
+              jsonrpc: "2.0",
+              id: body.id,
+              result: {
+                id: `task-${body.id}`,
+                state: "completed",
+                status: { state: "completed" },
+                message: { role: "agent", parts: [{ type: "text", text: delegateResult }] },
+              },
+            };
+          }
+        } catch (err) {
+          console.warn(`[${agentRole}] Auto-delegation failed: ${err}, proceeding with direct response`);
+        }
+      }
+
+      // If message contains coding-related keywords, delegate to engineer
+      if (agentRole === "mayor" && isCodingRequest) {
+        console.log(`[${agentRole}] Detected coding request, delegating to engineer...`);
+        try {
+          const discovered = await discoverAgentBySkill(supervisorUrl, "coding", agentRole);
+          if (discovered) {
+            console.log(`[${agentRole}] Delegating to engineer at ${discovered.a2aUrl}`);
+            const delegateResult = await delegateToAgent(discovered.a2aUrl, messageText, agentRole, "coding");
+
+            // Return delegation result as completion
+            if (isStreaming) {
+              reply.raw?.writeHead(200, {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+              });
+
+              const sessionId = `session-${body.id}`;
+              const taskId = `task-${body.id}`;
+
+              const taskEvent = {
+                kind: "task",
+                task: { id: taskId, sessionId: sessionId, status: { state: "working" } },
+              };
+              reply.raw?.write(`data: ${JSON.stringify(taskEvent)}\n\n`);
+
+              // Stream the delegation result
+              const textDeltaEvent = { kind: "textDelta", textDelta: delegateResult };
+              reply.raw?.write(`data: ${JSON.stringify(textDeltaEvent)}\n\n`);
+
+              const doneEvent = {
+                kind: "completion",
+                completion: { id: taskId, sessionId, message: delegateResult, status: { state: "completed" } },
+              };
+              reply.raw?.write(`data: ${JSON.stringify(doneEvent)}\n\n`);
+              reply.raw?.write(`data: [done]\n\n`);
+              reply.raw?.end();
+              return null;
+            }
+
+            return {
+              jsonrpc: "2.0",
+              id: body.id,
+              result: {
+                id: `task-${body.id}`,
+                state: "completed",
+                status: { state: "completed" },
+                message: { role: "agent", parts: [{ type: "text", text: delegateResult }] },
+              },
+            };
+          }
+        } catch (err) {
+          console.warn(`[${agentRole}] Auto-delegation failed: ${err}, proceeding with direct response`);
+        }
+      }
 
       // For streaming, we use session.stream() to get chunked output
       if (isStreaming) {
