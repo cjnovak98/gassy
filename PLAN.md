@@ -42,16 +42,14 @@
 │                                   │ /.well-known/          │
 │                                   │  agent.json             │
 │                                   ▼                        │
-│  ┌──────────────────────────────────────────────┐          │
-│  │  Beads Store (work tracking, budgets, audit)  │          │
-│  └──────────────────────────────────────────────┘          │
+│         (work tracking via Beads - future)                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **Key insight**: `city.toml` is a bootstrap hint, not a enforced desired state.
 The Mayor and Directors exercise agency — they hire, fire, and direct agents
-based on work needs and budget constraints. The Supervisor provides the
-registry and resource management infrastructure that makes this possible.
+based on work needs. The Supervisor provides the registry and resource
+management infrastructure that makes this possible.
 
 ## Core Abstractions
 
@@ -70,19 +68,16 @@ version = "1"
 [[agents]]
 id = "mayor"           # orchestrator (A2A client)
 role = "ceo"
-budget = { monthly = 60.0 }
 
 [[agents]]
 id = "engineer"
 role = "cto"
 skills = ["code", "test", "review"]
-budget = { monthly = 50.0 }
 
 [[agents]]
 id = "designer"
 role = "cmo"
 skills = ["design", "ui", "assets"]
-budget = { monthly = 40.0 }
 
 [runtime]
 port_range = { min = 8080, max = 9000 }
@@ -149,16 +144,16 @@ app = Starlette(routes=[
 The Supervisor is the infrastructure backbone of a Gassy city. It combines three concerns:
 
 **Registry**: All agents register with the Supervisor at startup. Agents
-discover each other by querying the Supervisor's registry (via `GET /list`).
+discover each other by querying the Supervisor's registry (via `GET /agents`).
 This replaces static URL configuration — agents don't hardcode peer URLs.
+Skill-based discovery is planned for future release.
 
-**Resource Manager**: The Supervisor manages compute resources and budgets.
-It tracks which agents are running, their resource usage, and enforces
-monthly budget caps. It provides the `hire` and `fire` operations that
-authorized agents (Mayor, Directors) use to scale the city.
+**Resource Manager**: The Supervisor manages compute resources.
+It tracks which agents are running and provides the `hire` and `fire`
+operations that authorized agents (Mayor, Directors) use to scale the city.
 
 **Reconcile Loop**: For bootstrap and disaster recovery, the Supervisor
-can ensure a minimum baseline of agents is running (e.g., if Mayor dies,
+ensures a minimum baseline of agents is running (e.g., if Mayor dies,
 restart it). But this is NOT enforcing city.toml as desired state — it's
 infrastructure-level housekeeping.
 
@@ -171,11 +166,9 @@ No port configuration needed in city.toml — the Supervisor handles all allocat
 // Supervisor types (cmd/supervisor/main.go)
 type Supervisor struct {
     city        CityConfig        // bootstrap seed, not enforced
-    beads       BeadsStore        // work tracking, budgets
     registry    map[string]Agent  // agent_id → Agent registration
     portRange   PortRange         // min/max ports for allocation
     usedPorts   map[int]bool      // currently allocated ports
-    a2a_clients map[string]A2AClient
 }
 
 type PortRange struct {
@@ -187,7 +180,7 @@ type PortRange struct {
 func (s *Supervisor) Register(agent Agent) error      // agent registers a2a_url
 func (s *Supervisor) Unregister(agentID string) error
 func (s *Supervisor) ListAgents() []AgentCard
-func (s *Supervisor) Discover(skill string) (Agent, error)  // find by skill
+func (s *Supervisor) Discover(skill string) (Agent, error)  // planned: find by skill
 
 // Port allocation (internal)
 func (s *Supervisor) allocatePort() (int, error)  // first free port in range
@@ -312,29 +305,21 @@ gassy/
 ## CLI Commands
 
 ```bash
-# Start the city (supervisor container + agents from city.toml)
-gassy-admin start
+# gassy-admin: Container lifecycle management
+gassy-admin start           # Start supervisor + agents from city.toml
+gassy-admin stop            # Stop all containers
+gassy-admin status          # Show container status
+gassy-admin ps              # List running containers
+gassy-admin logs <name>     # View container logs
+gassy-admin restart <name> # Restart a container
 
-# List all agents (from Supervisor registry)
-gassy agent list
-
-# Delegate work to an agent
-gassy delegate engineer "Write a WebSocket handler"
-
-# Supervisor management (client commands to containerized supervisor)
-gassy supervisor list
+# gassy: Client commands to interact with agents/supervisor
+gassy agent list            # List all registered agents
+gassy delegate <agent> "<msg>"  # Delegate work via A2A
+gassy supervisor list       # List agents via supervisor socket
 gassy supervisor hire <name> <role> [skills...]
 gassy supervisor fire <name>
-
-# Stop the city
-gassy-admin stop
 ```
-
-**Key distinction**: `gassy rig add` (Phase 2) registers an agent with
-the Supervisor at startup. `gassy supervisor hire` (organizational) is when a Mayor
-or Director intentionally adds an agent to the workforce. Both use the
-Supervisor's underlying hire mechanism, but they serve different purposes
-(bootstrap vs. organizational action).
 
 ## Current Status
 
@@ -356,9 +341,9 @@ Phase 0 (Foundation), Phase 1 (Orchestration Core), and Phase 2 (Agent Integrati
 - `gassy delegate` for A2A task delegation
 
 ### Phase 2 — Agent Integration ✅
-- A2A server middleware per agent (`examples/poc/engineer/main.go`, `examples/poc/mayor/main.go`)
+- A2A server per agent (TypeScript agent implementation in `agent/src/`)
 - Agent self-registration via supervisor HTTP API (`:9091`)
-- Mayor discovers agents from supervisor at startup
+- Skill-based discovery via Supervisor registry (planned for future)
 - Mayor discovers agents from supervisor at startup
 
 ### What's Running
