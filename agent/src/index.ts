@@ -295,15 +295,7 @@ async function createA2AServer(
 
       console.log(`[${agentRole}] Received prompt: ${messageText.substring(0, 200)}${messageText.length > 200 ? "..." : ""}`);
 
-      // Call the agent SDK using persistent session
-      const response = await session.send(fullMessage);
-
-      console.log(`[${agentRole}] SDK response type: ${typeof response}`);
-
-      // session.send() returns the result directly
-      const responseText = typeof response === "string" ? response : JSON.stringify(response);
-
-      // For streaming, send as SSE
+      // For streaming, we use session.stream() to get chunked output
       if (isStreaming) {
         reply.raw?.writeHead(200, {
           "Content-Type": "text/event-stream",
@@ -311,17 +303,51 @@ async function createA2AServer(
           "Connection": "keep-alive",
         });
 
-        const event = {
-          kind: "textDelta",
-          textDelta: responseText,
-        };
-        reply.raw?.write(`data: ${JSON.stringify(event)}\n\n`);
+        // Start the conversation
+        await session.send(fullMessage);
 
+        // Stream events as they come
+        let finalMessage = "";
+        const sessionId = `session-${body.id}`;
+
+        try {
+          for await (const msg of session.stream()) {
+            // SDKPartialAssistantMessage has type 'stream_event' and contains text deltas
+            if (msg.type === 'stream_event' && 'event' in msg) {
+              const streamEvent = (msg as any).event;
+
+              // Handle content_block_delta with text
+              if (streamEvent.type === 'content_block_delta') {
+                const delta = streamEvent.delta;
+                if (delta.type === 'text_delta' && delta.text) {
+                  finalMessage += delta.text;
+                  const textDeltaEvent = {
+                    kind: "textDelta",
+                    textDelta: delta.text,
+                  };
+                  reply.raw?.write(`data: ${JSON.stringify(textDeltaEvent)}\n\n`);
+                }
+              }
+
+              // Handle message delta (completion info)
+              if (streamEvent.type === 'message_delta') {
+                // Could capture usage, stop_reason here if needed
+              }
+            }
+
+            // Check if session is still active - when it's done, we'll get the result differently
+            // The stream ends when the session completes
+          }
+        } catch (err) {
+          console.error(`[${agentRole}] Stream error:`, err);
+        }
+
+        // Send completion event
         const doneEvent = {
           kind: "completion",
           completion: {
-            message: responseText,
-            sessionId: `session-${body.id}`,
+            message: finalMessage,
+            sessionId: sessionId,
           },
         };
         reply.raw?.write(`data: ${JSON.stringify(doneEvent)}\n\n`);
@@ -331,7 +357,26 @@ async function createA2AServer(
         return null;
       }
 
-      // Non-streaming response
+      // Non-streaming response - send message then collect response via stream
+      await session.send(fullMessage);
+
+      let responseText = "";
+      try {
+        for await (const msg of session.stream()) {
+          if (msg.type === 'stream_event' && 'event' in msg) {
+            const streamEvent = (msg as any).event;
+            if (streamEvent.type === 'content_block_delta') {
+              const delta = streamEvent.delta;
+              if (delta.type === 'text_delta' && delta.text) {
+                responseText += delta.text;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[${agentRole}] Stream error:`, err);
+      }
+
       return {
         jsonrpc: "2.0",
         id: body.id,
