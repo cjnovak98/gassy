@@ -72,8 +72,8 @@ Tasks are immutable once terminal - refinements require a new task in the same `
 #### Streaming is Implemented (2026-04-21)
 True chunked streaming via SDK `session.stream()` was implemented in commit a650313. Each token/chunk is emitted as a separate `textDelta` SSE event.
 
-#### File Part Support (Partially Done)
-Agents now serve files at `localhost:<port>/files/*` via `@fastify/static`. `/app/artifacts/` directory created. FilePart in A2A types still needs implementation.
+#### File Part Support (Done 2026-04-21)
+Agents serve files at `localhost:<port>/files/*` via `@fastify/static`. `/app/artifacts/` directory created. FilePart in A2A types implemented.
 
 #### Webhook is Stub
 `registerWebhook` exists but doesn't actually register anything.
@@ -203,21 +203,21 @@ fastify.get('/files/:filename', async (req, reply) => {
 
 ## Implementation To-Do List
 
-### Phase 1: Fix Streaming (Critical)
-- [ ] Investigate Anthropic agent SDK streaming capabilities
-- [ ] Modify agent to emit true chunked textDelta events
-- [ ] Test streaming vs batch performance
+### Phase 1: True Streaming (Done 2026-04-21)
+- [x] Investigate Anthropic agent SDK streaming capabilities
+- [x] Modify agent to emit true chunked textDelta events (commit a650313)
+- [x] Test streaming vs batch performance
 
 ### Phase 2: File Serving
 - [x] Add `/files/*` route to agent Fastify server
 - [x] Create `/app/artifacts/` directory in container
-- [ ] Implement FilePart in A2A types
-- [x] Test artifact URIs pointing to agent-served files (DONE: verified on VM)
+- [x] Implement FilePart in A2A types (2026-04-21)
+- [x] Test artifact URIs pointing to agent-served files
 
 ### Phase 3: Skill Discovery
-- [ ] Implement supervisor `GET /agents/discover?skill=`
-- [ ] Test discovery returns matching agents
-- [ ] Add skill matching to agent Card
+- [x] Implement supervisor `GET /registry/discover?skill=` (exists in code)
+- [ ] Test discovery returns matching agents (blocked: container issues)
+- [x] Add skill matching to agent Card (agent registers with skills)
 
 ### Phase 4: Task Handoffs
 - [ ] Design handoff protocol (agent → agent delegation)

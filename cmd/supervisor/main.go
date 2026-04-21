@@ -32,6 +32,7 @@ type Agent struct {
 	URL          string
 	CardURL      string // URL to this agent's agent card (e.g., http://localhost:8082/.well-known/agent.json)
 	A2AURL       string // A2A endpoint URL for agent communication
+	LastSpawned  int64 // Unix timestamp when agent was last spawned (for grace period)
 }
 
 // AgentStatus represents the current status of an agent
@@ -176,6 +177,7 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 
 		// Add agent to registry BEFORE releasing port hold to prevent
 		// same port being reassigned to next agent in reconcile loop
+		now := time.Now().Unix()
 		s.agents[agentCfg.ID] = Agent{
 			Name:        agentCfg.ID,
 			Role:        agentCfg.Role,
@@ -187,6 +189,7 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 			URL:         fmt.Sprintf("http://localhost:%d", port),
 			CardURL:     fmt.Sprintf("http://localhost:%d/.well-known/agent.json", port),
 			A2AURL:      fmt.Sprintf("http://localhost:%d", port),
+			LastSpawned: now,
 		}
 		log.Printf("reconciled agent %s (role=%s, port=%d)", agentCfg.ID, agentCfg.Role, port)
 		ln.Close()
@@ -205,7 +208,14 @@ func (s *Supervisor) healthCheckAndRestart(ctx context.Context) {
 	}
 	s.mu.RUnlock()
 
+	now := time.Now().Unix()
 	for name, agent := range agents {
+		// Skip agents that were spawned in the last 60 seconds (still initializing)
+		if now-agent.LastSpawned < 60 {
+			log.Printf("agent %s is still initializing (spawned %d seconds ago), skipping health check", name, now-agent.LastSpawned)
+			continue
+		}
+
 		alive := s.pingAgent(ctx, agent.URL)
 		s.mu.Lock()
 		if a, ok := s.agents[name]; ok {
@@ -229,6 +239,7 @@ func (s *Supervisor) healthCheckAndRestart(ctx context.Context) {
 						if existing, ok := s.agents[name]; ok {
 							existing.ContainerID = newContainerID
 							existing.Status = StatusAlive
+							existing.LastSpawned = time.Now().Unix()
 							s.agents[name] = existing
 						}
 						s.mu.Unlock()
@@ -307,8 +318,9 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 		}
 		if r.Method == http.MethodPost {
 			var req struct {
-				Name    string `json:"name"`
-				CardURL string `json:"cardURL"`
+				Name    string   `json:"name"`
+				CardURL string   `json:"cardURL"`
+				Skills  []string `json:"skills"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request", http.StatusBadRequest)
@@ -327,6 +339,8 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 				existing.A2AURL = baseURL
 				existing.Role = req.Name
 				existing.Status = StatusAlive
+				existing.Skills = req.Skills
+				existing.LastSpawned = time.Now().Unix()
 				s.agents[req.Name] = existing
 				s.saveStateLocked()
 				w.Header().Set("Content-Type", "application/json")
@@ -334,12 +348,14 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 				return
 			}
 			agent := Agent{
-				Name:    req.Name,
-				Role:    req.Name, // Use name as role (mayor/engineer serve as both ID and role)
-				CardURL: req.CardURL,
-				URL:     baseURL,
-				A2AURL:  baseURL,
-				Status:  StatusAlive,
+				Name:        req.Name,
+				Role:        req.Name, // Use name as role (mayor/engineer serve as both ID and role)
+				CardURL:     req.CardURL,
+				URL:         baseURL,
+				A2AURL:      baseURL,
+				Status:      StatusAlive,
+				Skills:      req.Skills,
+				LastSpawned: time.Now().Unix(),
 			}
 			s.agents[req.Name] = agent
 			s.saveStateLocked()
@@ -378,6 +394,7 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 			existing.URL = baseURL
 			existing.CardURL = cardURL
 			existing.Status = StatusAlive
+			existing.LastSpawned = time.Now().Unix()
 			s.agents[req.AgentID] = existing
 			s.saveStateLocked()
 			w.Header().Set("Content-Type", "application/json")
@@ -385,13 +402,14 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 			return
 		}
 		agent := Agent{
-			Name:    req.AgentID,
-			Role:    req.Role,
-			Skills:  req.Skills,
-			A2AURL:  req.A2AURL,
-			URL:     baseURL,
-			CardURL: cardURL,
-			Status:  StatusAlive,
+			Name:        req.AgentID,
+			Role:        req.Role,
+			Skills:      req.Skills,
+			A2AURL:      req.A2AURL,
+			URL:         baseURL,
+			CardURL:     cardURL,
+			Status:      StatusAlive,
+			LastSpawned: time.Now().Unix(),
 		}
 		s.agents[req.AgentID] = agent
 		s.saveStateLocked()
@@ -643,17 +661,19 @@ func (s *Supervisor) hireAgent(name, role string, port int, skills []string) map
 		}
 	}
 
+	// Create agent entry with placeholder skills - will be updated when agent registers
 	agent := Agent{
 		Name:        name,
 		Role:        role,
-		Binary:      name, // binary name is derived from agent name
+		Binary:      name,
 		Port:        port,
-		Skills:      skills,
+		Skills:      skills, // Use provided skills or empty
 		ContainerID: containerID,
 		Status:      StatusAlive,
 		URL:         fmt.Sprintf("http://localhost:%d", port),
 		CardURL:     fmt.Sprintf("http://localhost:%d/.well-known/agent.json", port),
 		A2AURL:      fmt.Sprintf("http://localhost:%d", port),
+		LastSpawned: time.Now().Unix(),
 	}
 	s.agents[name] = agent
 	s.saveStateLocked()

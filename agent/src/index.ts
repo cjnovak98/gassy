@@ -317,14 +317,28 @@ async function createA2AServer(
           "Connection": "keep-alive",
         });
 
+        const sessionId = `session-${body.id}`;
+        const taskId = `task-${body.id}`;
+
+        // Send initial task event with working state
+        const taskEvent = {
+          kind: "task",
+          task: {
+            id: taskId,
+            sessionId: sessionId,
+            status: { state: "working" },
+          },
+        };
+        reply.raw?.write(`data: ${JSON.stringify(taskEvent)}\n\n`);
+
         // Start the conversation
         await session.send(fullMessage);
 
         // Stream events as they come
         let finalMessage = "";
-        const sessionId = `session-${body.id}`;
-
         let eventCount = 0;
+        let hasContent = false;
+
         try {
           for await (const msg of session.stream()) {
             eventCount++;
@@ -347,6 +361,7 @@ async function createA2AServer(
                 const delta = streamEvent.delta;
                 if (delta.type === 'text_delta' && delta.text) {
                   finalMessage += delta.text;
+                  hasContent = true;
                   const textDeltaEvent = {
                     kind: "textDelta",
                     textDelta: delta.text,
@@ -370,12 +385,14 @@ async function createA2AServer(
 
         console.log(`[${agentRole}] Stream complete. Total events: ${eventCount}, final message length: ${finalMessage.length}`);
 
-        // Send completion event
+        // Send completion event with final status
         const doneEvent = {
           kind: "completion",
           completion: {
-            message: finalMessage,
+            id: taskId,
             sessionId: sessionId,
+            message: finalMessage,
+            status: { state: finalMessage ? "completed" : "failed" },
           },
         };
         reply.raw?.write(`data: ${JSON.stringify(doneEvent)}\n\n`);
@@ -461,9 +478,11 @@ async function createA2AServer(
 async function registerWithSupervisor(
   supervisorUrl: string,
   agentRole: string,
-  port: number
+  port: number,
+  skills: Array<{name: string, description: string}>
 ): Promise<void> {
   const cardUrl = `http://localhost:${port}/.well-known/agent.json`;
+  const skillNames = skills.map(s => s.name);
 
   try {
     const response = await fetch(`${supervisorUrl}/agents`, {
@@ -472,6 +491,7 @@ async function registerWithSupervisor(
       body: JSON.stringify({
         name: agentRole,
         cardURL: cardUrl,
+        skills: skillNames,
       }),
     });
 
@@ -600,7 +620,7 @@ async function main() {
   console.log(`Session created for ${env.AGENT_ROLE} agent`);
 
   // Register with supervisor
-  await registerWithSupervisor(env.SUPERVISOR_URL, env.AGENT_ROLE, env.PORT);
+  await registerWithSupervisor(env.SUPERVISOR_URL, env.AGENT_ROLE, env.PORT, agentCard.skills);
 
   // Start A2A server with the persistent session
   const server = await createA2AServer(env.PORT, env.AGENT_ROLE, session);

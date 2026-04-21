@@ -17,11 +17,13 @@ max = 9000
 id = "mayor"
 role = "mayor"           # Maps to config/mayor/
 cmd = "mayor"            # Container command
+skills = ["orchestration", "delegation", "answering"]
 
 [[agents]]
 id = "engineer"
 role = "engineer"        # Maps to config/engineer/
 cmd = "engineer"         # Container command
+skills = ["coding", "testing", "building"]
 
 [network]
 mayor_url = "http://localhost:8081"

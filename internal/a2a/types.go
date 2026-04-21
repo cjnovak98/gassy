@@ -57,6 +57,17 @@ type DataPart struct {
 	Data map[string]interface{} `json:"data"`
 }
 
+// FilePart represents a file part (for artifact transfer)
+// URI field contains the URL where the file can be downloaded (e.g., http://localhost:8080/files/output.pdf)
+// Data field contains inline base64-encoded data (only one of URI or Data should be set)
+type FilePart struct {
+	Type     string `json:"type"`
+	URI      string `json:"uri,omitempty"`
+	Data     []byte `json:"data,omitempty"`    // base64-encoded inline data
+	MIMEType string `json:"mimeType,omitempty"`
+	Name     string `json:"name,omitempty"`
+}
+
 // Artifact represents a task artifact
 type Artifact struct {
 	Resource *ArtifactResource `json:"resource,omitempty"`
