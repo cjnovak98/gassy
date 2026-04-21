@@ -339,7 +339,10 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 				existing.A2AURL = baseURL
 				existing.Role = req.Name
 				existing.Status = StatusAlive
-				existing.Skills = req.Skills
+				// Only update skills if explicitly provided (preserve existing skills on reregister)
+				if req.Skills != nil && len(req.Skills) > 0 {
+					existing.Skills = req.Skills
+				}
 				existing.LastSpawned = time.Now().Unix()
 				s.agents[req.Name] = existing
 				s.saveStateLocked()
