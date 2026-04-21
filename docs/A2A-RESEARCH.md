@@ -214,13 +214,20 @@ fastify.get('/files/:filename', async (req, reply) => {
 - [x] Implement FilePart in A2A types (2026-04-21)
 - [x] Test artifact URIs pointing to agent-served files
 
-### Phase 3: Skill Discovery
+### Phase 3: Skill Discovery (Done 2026-04-21)
 - [x] Implement supervisor `GET /registry/discover?skill=` (exists in code)
-- [ ] Test discovery returns matching agents (blocked: container issues)
+- [x] Test discovery returns matching agents
 - [x] Add skill matching to agent Card (agent registers with skills)
+- [x] Fix supervisor /agents POST to properly update Skills field
 
 #### Discovery Notes (2026-04-21)
-The supervisor at :9091 has `/registry/discover?skill=` endpoint. Agent registers via `/agents` POST with skills array. Discovery filters agents by matching skill. **VM issue**: containers not starting - podman socket at `/var/run/docker.sock` is symlink to `/run/podman/podman.sock` which doesn't exist.
+The supervisor at :9091 has `/registry/discover?skill=` endpoint. Agent registers via `/agents` POST with skills array. Discovery filters agents by matching skill. **Fixed**: The `/agents` POST handler was storing skills as `null` because the request body uses `skills` but the state file showed `Skills: null`. Root cause was that `/agents` handler ignored skills in the request body. Now properly registers agents with skills.
+
+**Verified working (2026-04-21)**:
+- `curl 'http://localhost:9091/registry/discover?skill=coding'` returns `[{"agent_id":"engineer","a2a_url":"http://localhost:8081"}]`
+- File serving at `http://localhost:8081/files/test.txt` works
+- A2A streaming works via `gassy delegate engineer 'prompt'`
+- Mayor and engineer containers running on ports 8080 and 8081
 
 ### Phase 4: Task Handoffs
 - [ ] Design handoff protocol (agent → agent delegation)
