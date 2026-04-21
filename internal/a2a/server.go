@@ -199,13 +199,6 @@ func (s *Server) HandleA2A() http.HandlerFunc {
 
 // handleStreamingMessageSSE handles streaming messages via Server-Sent Events
 func (s *Server) handleStreamingMessageSSE(w http.ResponseWriter, r *http.Request, req map[string]json.RawMessage) {
-	// Read body so we can pass it to handlers that need to re-read
-	bodyData, err := ReadBody(r)
-	if err != nil {
-		s.sendError(w, -32600, "failed to read body", nil)
-		return
-	}
-
 	paramsRaw, ok := req["params"]
 	if !ok {
 		s.sendError(w, -32600, "params missing", nil)
