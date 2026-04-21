@@ -22,17 +22,17 @@ import (
 
 // Agent represents a registered agent in the supervisor's registry
 type Agent struct {
-	Name         string
-	Role         string // Agent role (e.g., "engineer", "tester")
-	Binary       string
-	Port         int
-	Skills       []string
-	ContainerID  string // podman container ID/name
-	Status       AgentStatus
-	URL          string
-	CardURL      string // URL to this agent's agent card (e.g., http://localhost:8082/.well-known/agent.json)
-	A2AURL       string // A2A endpoint URL for agent communication
-	LastSpawned  int64 // Unix timestamp when agent was last spawned (for grace period)
+	Name         string   `json:"name"`
+	Role         string   `json:"role"` // Agent role (e.g., "engineer", "tester")
+	Binary       string   `json:"binary"`
+	Port         int      `json:"port"`
+	Skills      []string `json:"skills"`
+	ContainerID  string   `json:"containerId"` // podman container ID/name
+	Status       AgentStatus `json:"status"`
+	URL          string   `json:"url"`
+	CardURL      string   `json:"cardUrl"` // URL to this agent's agent card (e.g., http://localhost:8082/.well-known/agent.json)
+	A2AURL       string   `json:"a2aUrl"` // A2A endpoint URL for agent communication
+	LastSpawned  int64   `json:"lastSpawned"` // Unix timestamp when agent was last spawned (for grace period)
 }
 
 // AgentStatus represents the current status of an agent
@@ -319,7 +319,7 @@ func (s *Supervisor) serveHTTP(ctx context.Context) {
 		if r.Method == http.MethodPost {
 			var req struct {
 				Name    string   `json:"name"`
-				CardURL string   `json:"cardURL"`
+				CardURL string   `json:"cardUrl"`
 				Skills  []string `json:"skills"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
