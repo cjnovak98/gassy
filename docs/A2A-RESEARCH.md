@@ -246,9 +246,17 @@ Implementation:
 - Both streaming and non-streaming paths handle delegation result
 
 ### Phase 5: Webhooks
-- [ ] Implement webhook registration
-- [ ] Add webhook POST endpoint to agent
-- [ ] Test long-running task notification
+- [x] Implement webhook registration (server stores WebhookURL via registerWebhook)
+- [x] Send webhooks on task completion (TaskWebhookEvent POSTed to registered URL)
+- [x] Send webhooks on artifact updates during streaming
+- [ ] Add webhook POST endpoint to agent (for receiving callbacks from external services)
+
+#### Webhook Implementation (2026-04-21)
+Webhook delivery is now integrated into the SSE streaming flow:
+- `SendWebhook(event)` method POSTs TaskWebhookEvent to registered webhook URL
+- During streaming: artifactUpdate events trigger immediate webhook delivery (non-blocking)
+- After done event: task completion triggers webhook with final status
+- 10-second timeout, non-blocking (goroutine) so doesn't slow SSE response
 
 ### Future: Supervisor Task Graph
 - [ ] Research DAG implementations
