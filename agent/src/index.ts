@@ -811,7 +811,7 @@ async function registerWithSupervisor(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: agentRole,
-        cardURL: cardUrl,
+        cardUrl: cardUrl,
         skills: skillNames,
       }),
     });
