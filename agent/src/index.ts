@@ -310,11 +310,16 @@ async function createA2AServer(
         let finalMessage = "";
         const sessionId = `session-${body.id}`;
 
+        let eventCount = 0;
         try {
           for await (const msg of session.stream()) {
+            eventCount++;
+            console.log(`[${agentRole}] Stream event ${eventCount}: type=${msg.type}`);
+
             // SDKPartialAssistantMessage has type 'stream_event' and contains text deltas
             if (msg.type === 'stream_event' && 'event' in msg) {
               const streamEvent = (msg as any).event;
+              console.log(`[${agentRole}] Stream event details:`, JSON.stringify(streamEvent).substring(0, 200));
 
               // Handle content_block_delta with text
               if (streamEvent.type === 'content_block_delta') {
@@ -341,6 +346,8 @@ async function createA2AServer(
         } catch (err) {
           console.error(`[${agentRole}] Stream error:`, err);
         }
+
+        console.log(`[${agentRole}] Stream complete. Total events: ${eventCount}, final message length: ${finalMessage.length}`);
 
         // Send completion event
         const doneEvent = {
