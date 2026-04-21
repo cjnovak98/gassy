@@ -211,3 +211,12 @@ type TaskArtifactUpdateEvent struct {
 	TaskID   string   `json:"taskId"`
 	Artifact Artifact `json:"artifact"`
 }
+
+// TaskWebhookEvent is the payload sent to webhooks for task events
+type TaskWebhookEvent struct {
+	EventType string              `json:"eventType"` // "task_status_update" or "task_artifact_update"
+	TaskID    string              `json:"taskId"`
+	Timestamp time.Time           `json:"timestamp"`
+	Status    *TaskStatus         `json:"status,omitempty"`
+	Artifact  *Artifact           `json:"artifact,omitempty"`
+}

@@ -1,11 +1,14 @@
 package a2a
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Server handles A2A requests
@@ -196,6 +199,13 @@ func (s *Server) HandleA2A() http.HandlerFunc {
 
 // handleStreamingMessageSSE handles streaming messages via Server-Sent Events
 func (s *Server) handleStreamingMessageSSE(w http.ResponseWriter, r *http.Request, req map[string]json.RawMessage) {
+	// Read body so we can pass it to handlers that need to re-read
+	bodyData, err := ReadBody(r)
+	if err != nil {
+		s.sendError(w, -32600, "failed to read body", nil)
+		return
+	}
+
 	paramsRaw, ok := req["params"]
 	if !ok {
 		s.sendError(w, -32600, "params missing", nil)
@@ -241,6 +251,8 @@ func (s *Server) handleStreamingMessageSSE(w http.ResponseWriter, r *http.Reques
 		f.Flush()
 	}
 
+	var taskStatus *TaskStatus
+	var taskID string
 	for event := range events {
 		data, err := json.Marshal(event)
 		if err != nil {
@@ -250,12 +262,42 @@ func (s *Server) handleStreamingMessageSSE(w http.ResponseWriter, r *http.Reques
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
+
+		// Track task status and ID for webhook notification
+		if event.TaskID != "" {
+			taskID = event.TaskID
+		}
+		if event.Status != nil {
+			taskStatus = event.Status
+		}
+
+		// Send webhook for artifact updates
+		if event.Kind == "artifactUpdate" && event.Artifact != nil && s.WebhookURL != "" {
+			webhookEvent := TaskWebhookEvent{
+				EventType: "task_artifact_update",
+				TaskID:    taskID,
+				Timestamp: time.Now(),
+				Artifact:  event.Artifact,
+			}
+			go s.SendWebhook(webhookEvent) // Non-blocking
+		}
 	}
 
 	// Send done event
 	fmt.Fprintf(w, "event: done\ndata: {}\n\n")
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
+	}
+
+	// Send webhook for task completion
+	if taskID != "" && taskStatus != nil && s.WebhookURL != "" {
+		webhookEvent := TaskWebhookEvent{
+			EventType: "task_status_update",
+			TaskID:    taskID,
+			Timestamp: time.Now(),
+			Status:    taskStatus,
+		}
+		go s.SendWebhook(webhookEvent) // Non-blocking
 	}
 }
 
@@ -383,6 +425,48 @@ func (s *Server) handleListTasks(req map[string]json.RawMessage) (interface{}, e
 	}
 
 	return tasks, nil
+}
+
+// SendWebhook sends a webhook notification for a task status or artifact update
+func (s *Server) SendWebhook(event TaskWebhookEvent) error {
+	if s.WebhookURL == "" {
+		return nil
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook payload: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, s.WebhookURL, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create webhook request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("webhook request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// ReadBody reads and restores the request body
+func ReadBody(r *http.Request) ([]byte, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	// Restore the body so it can be read again
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return body, nil
 }
 
 func (s *Server) sendError(w http.ResponseWriter, code int, msg string, data interface{}) {
