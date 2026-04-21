@@ -251,6 +251,30 @@ async function createA2AServer(
     return { status: "ok", role: agentRole };
   });
 
+  // POST /webhook - Receive webhook callbacks from external services
+  // This allows the agent to receive push notifications from external systems
+  fastify.post("/webhook", async (request, reply) => {
+    const body = request.body as any;
+
+    console.log(`[${agentRole}] Received webhook:`, JSON.stringify(body).substring(0, 200));
+
+    // Log the webhook event for debugging
+    if (body && body.eventType) {
+      console.log(`[${agentRole}] Webhook event type: ${body.eventType}`);
+    }
+
+    if (body && body.data) {
+      console.log(`[${agentRole}] Webhook data:`, JSON.stringify(body.data).substring(0, 200));
+    }
+
+    // Return acknowledgment
+    return {
+      jsonrpc: "2.0",
+      id: body?.id || null,
+      result: { status: "received" },
+    };
+  });
+
   // POST /tools/delegate - Agent tool for delegating to other agents
   // This endpoint allows the agent's LLM to request delegation via tool call
   fastify.post("/tools/delegate", async (request, reply) => {
