@@ -255,7 +255,17 @@ Implementation:
 - [x] Implement webhook registration (server stores WebhookURL via registerWebhook)
 - [x] Send webhooks on task completion (TaskWebhookEvent POSTed to registered URL)
 - [x] Send webhooks on artifact updates during streaming
-- [ ] Add webhook POST endpoint to agent (for receiving callbacks from external services)
+- [x] Add webhook POST endpoint to agent (for receiving callbacks from external services)
+
+#### Webhook Reception Implementation (2026-04-21)
+Agents now have a `POST /webhook` endpoint that:
+- Accepts JSON-RPC formatted webhook events from external services
+- Logs received events for debugging
+- Returns acknowledgment with `{"status":"received"}`
+- Both mayor (port 8080) and engineer (port 8081) respond to webhooks
+
+Verified working:
+- `curl -s http://localhost:8080/webhook -X POST -H 'Content-Type: application/json' -d '{"eventType":"test"}'` returns `{"jsonrpc":"2.0","id":null,"result":{"status":"received"}}`
 
 #### Webhook Implementation (2026-04-21)
 Webhook delivery is now integrated into the SSE streaming flow:
@@ -288,4 +298,4 @@ Webhook delivery is now integrated into the SSE streaming flow:
 
 ---
 
-*Last updated: 2026-04-21*
+*Last updated: 2026-04-21* (webhook reception added)
