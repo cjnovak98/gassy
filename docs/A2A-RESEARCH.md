@@ -208,6 +208,12 @@ fastify.get('/files/:filename', async (req, reply) => {
 - [x] Modify agent to emit true chunked textDelta events (commit a650313)
 - [x] Test streaming vs batch performance
 
+#### Streaming Notes (2026-04-21)
+The agent code properly emits `textDelta` SSE events for each streaming chunk. However, the MiniMax API may not produce true streaming responses - observed behavior shows complete message returned in single `completion` event rather than multiple `textDelta` events. This is likely a MiniMax API limitation rather than an implementation issue.
+
+#### Bug Fix (2026-04-21)
+Fixed compilation error in `internal/a2a/server.go`: removed unused `bodyData` variable in `handleStreamingMessageSSE`. Commit 8763c94.
+
 ### Phase 2: File Serving
 - [x] Add `/files/*` route to agent Fastify server
 - [x] Create `/app/artifacts/` directory in container
