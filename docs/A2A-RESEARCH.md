@@ -229,10 +229,21 @@ The supervisor at :9091 has `/registry/discover?skill=` endpoint. Agent register
 - A2A streaming works via `gassy delegate engineer 'prompt'`
 - Mayor and engineer containers running on ports 8080 and 8081
 
-### Phase 4: Task Handoffs
-- [ ] Design handoff protocol (agent → agent delegation)
-- [ ] Implement agent-to-agent A2A calls in TypeScript agent
-- [ ] Test engineer → designer flow
+### Phase 4: Task Handoffs (Done 2026-04-21)
+- [x] Design handoff protocol (agent → agent delegation)
+- [x] Implement agent-to-agent A2A calls in TypeScript agent
+- [x] Test engineer → designer flow
+
+#### Auto-Delegation Implementation (2026-04-21)
+Mayor agent now automatically delegates based on keyword detection:
+- Coding keywords (`code`, `write`, `program`, `api`, `server`, etc.) → delegate to engineer (skill: coding)
+- Design keywords (`design`, `logo`, `ui`, `ux`, etc.) → delegate to designer (skill: design)
+
+Implementation:
+- `/tools/delegate` HTTP endpoint for agent tool calls
+- `discoverAgentBySkill()` queries supervisor `/registry/discover?skill=`
+- `delegateToAgent()` makes A2A streaming request and accumulates text from SSE
+- Both streaming and non-streaming paths handle delegation result
 
 ### Phase 5: Webhooks
 - [ ] Implement webhook registration
