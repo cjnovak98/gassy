@@ -409,6 +409,16 @@ async function createA2AServer(
       let responseText = "";
       try {
         for await (const msg of session.stream()) {
+          // Handle result message - contains the final response text
+          if (msg.type === 'result' && 'result' in msg) {
+            const resultMsg = msg as any;
+            if (resultMsg.result) {
+              responseText = resultMsg.result;
+              console.log(`[${agentRole}] Got result: ${responseText.substring(0, 100)}...`);
+            }
+          }
+
+          // Also capture text deltas for incremental response
           if (msg.type === 'stream_event' && 'event' in msg) {
             const streamEvent = (msg as any).event;
             if (streamEvent.type === 'content_block_delta') {
