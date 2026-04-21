@@ -219,6 +219,9 @@ fastify.get('/files/:filename', async (req, reply) => {
 - [ ] Test discovery returns matching agents (blocked: container issues)
 - [x] Add skill matching to agent Card (agent registers with skills)
 
+#### Discovery Notes (2026-04-21)
+The supervisor at :9091 has `/registry/discover?skill=` endpoint. Agent registers via `/agents` POST with skills array. Discovery filters agents by matching skill. **VM issue**: containers not starting - podman socket at `/var/run/docker.sock` is symlink to `/run/podman/podman.sock` which doesn't exist.
+
 ### Phase 4: Task Handoffs
 - [ ] Design handoff protocol (agent → agent delegation)
 - [ ] Implement agent-to-agent A2A calls in TypeScript agent
