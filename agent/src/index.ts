@@ -187,7 +187,8 @@ interface A2AMessage {
 async function createA2AServer(
   port: number,
   agentRole: string,
-  session: Awaited<ReturnType<typeof unstable_v2_createSession>>
+  session: Awaited<ReturnType<typeof unstable_v2_createSession>>,
+  agentCard: AgentCard
 ): Promise<FastifyInstance> {
   const fastify = Fastify({
     logger: false,
@@ -206,7 +207,7 @@ async function createA2AServer(
     decorateReply: false,
   });
 
-  const agentCard: AgentCard = {
+  const card: AgentCard = {
     name: agentRole,
     version: "0.1.0",
     capability: { agent: true },
@@ -230,12 +231,12 @@ async function createA2AServer(
 
   // GET /.well-known/agent.json - Agent card endpoint
   fastify.get("/.well-known/agent.json", async () => {
-    return agentCard;
+    return card;
   });
 
   // GET /.well-known/agent (alt path) - Same card
   fastify.get("/.well-known/agent", async () => {
-    return agentCard;
+    return card;
   });
 
   // GET /health - Health check endpoint for supervisor
@@ -619,11 +620,34 @@ async function main() {
 
   console.log(`Session created for ${env.AGENT_ROLE} agent`);
 
+  // Build agent card for registration and server
+  const agentCard: AgentCard = {
+    name: env.AGENT_ROLE,
+    version: "0.1.0",
+    capability: { agent: true },
+    provider: {
+      organization: "Gassy",
+      url: `http://localhost:${env.PORT}`,
+    },
+    skills:
+      env.AGENT_ROLE === "engineer"
+        ? [
+            { name: "coding", description: "Write and edit code files" },
+            { name: "testing", description: "Run tests and verify functionality" },
+            { name: "building", description: "Build and compile projects" },
+          ]
+        : [
+            { name: "orchestration", description: "Coordinate tasks between agents" },
+            { name: "delegation", description: "Delegate tasks to the engineer agent" },
+            { name: "answering", description: "Answer questions directly" },
+          ],
+  };
+
   // Register with supervisor
   await registerWithSupervisor(env.SUPERVISOR_URL, env.AGENT_ROLE, env.PORT, agentCard.skills);
 
   // Start A2A server with the persistent session
-  const server = await createA2AServer(env.PORT, env.AGENT_ROLE, session);
+  const server = await createA2AServer(env.PORT, env.AGENT_ROLE, session, agentCard);
 
   // Mayor gets a web UI on PORT+1 (disabled for now to avoid port conflicts)
   // if (env.AGENT_ROLE === "mayor") {
