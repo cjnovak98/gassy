@@ -69,18 +69,11 @@ Tasks are immutable once terminal - refinements require a new task in the same `
 
 ### What's "Fake" / Missing
 
-#### Streaming is Fake
-The TypeScript agent (`agent/src/index.ts`) sends the **entire response as ONE textDelta**, then completion, then `[done]`.
+#### Streaming is Implemented (2026-04-21)
+True chunked streaming via SDK `session.stream()` was implemented in commit a650313. Each token/chunk is emitted as a separate `textDelta` SSE event.
 
-```typescript
-// Current (FAKE streaming - line 316)
-textDelta: responseText  // One big chunk, not true streaming
-```
-
-True streaming requires the agent SDK to support chunked output, not batching everything.
-
-#### No File Part Support
-Only `TextPart` and `DataPart` implemented. No `FilePart` or artifact file serving.
+#### File Part Support (Partially Done)
+Agents now serve files at `localhost:<port>/files/*` via `@fastify/static`. `/app/artifacts/` directory created. FilePart in A2A types still needs implementation.
 
 #### Webhook is Stub
 `registerWebhook` exists but doesn't actually register anything.
@@ -216,10 +209,10 @@ fastify.get('/files/:filename', async (req, reply) => {
 - [ ] Test streaming vs batch performance
 
 ### Phase 2: File Serving
-- [ ] Add `/files/*` route to agent Fastify server
-- [ ] Create `/app/artifacts/` directory in container
+- [x] Add `/files/*` route to agent Fastify server
+- [x] Create `/app/artifacts/` directory in container
 - [ ] Implement FilePart in A2A types
-- [ ] Test artifact URIs pointing to agent-served files
+- [x] Test artifact URIs pointing to agent-served files (DONE: verified on VM)
 
 ### Phase 3: Skill Discovery
 - [ ] Implement supervisor `GET /agents/discover?skill=`
