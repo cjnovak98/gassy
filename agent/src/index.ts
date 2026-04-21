@@ -483,6 +483,112 @@ async function createA2AServer(
 }
 
 // =============================================================================
+// A2A Client - Agent-to-Agent Delegation
+// =============================================================================
+
+interface A2ADiscoveredAgent {
+  agentId: string;
+  a2aUrl: string;
+}
+
+// Discover an agent by skill via supervisor's discover endpoint
+async function discoverAgentBySkill(supervisorUrl: string, skill: string, roleName: string): Promise<A2ADiscoveredAgent | null> {
+  try {
+    const response = await fetch(`${supervisorUrl}/registry/discover?skill=${encodeURIComponent(skill)}`);
+    if (!response.ok) {
+      console.warn(`[${roleName}] Discovery failed: ${response.status}`);
+      return null;
+    }
+    const agents = await response.json() as Array<{agent_id: string; a2a_url: string}>;
+    if (agents.length === 0) {
+      console.warn(`[${roleName}] No agent found with skill: ${skill}`);
+      return null;
+    }
+    return { agentId: agents[0].agent_id, a2aUrl: agents[0].a2a_url };
+  } catch (error) {
+    console.warn(`[${roleName}] Discovery error: ${error}`);
+    return null;
+  }
+}
+
+// Delegate a task to another agent via A2A streaming
+async function delegateToAgent(
+  agentUrl: string,
+  taskMessage: string,
+  roleName: string,
+  skillHint?: string
+): Promise<string> {
+  console.log(`[${roleName}] Delegating to ${agentUrl}${skillHint ? ` (skill: ${skillHint})` : ""}`);
+
+  // A2A streaming request
+  const request = {
+    jsonrpc: "2.0",
+    id: Date.now(),
+    method: "sendStreamingMessage",
+    params: {
+      message: {
+        role: "user",
+        parts: [{ type: "text", text: taskMessage }],
+      },
+      stream: true,
+    },
+  };
+
+  try {
+    const response = await fetch(`${agentUrl}/a2a`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`A2A request failed: ${response.status}`);
+    }
+
+    // Read SSE stream and accumulate text deltas
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("No response body");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullResponse = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const dataStr = line.slice(6);
+          if (dataStr === "[done]") {
+            return fullResponse;
+          }
+          try {
+            const event = JSON.parse(dataStr);
+            if (event.kind === "textDelta" && event.textDelta) {
+              fullResponse += event.textDelta;
+            }
+          } catch {
+            // Ignore parse errors for non-JSON events
+          }
+        }
+      }
+    }
+
+    return fullResponse;
+  } catch (error) {
+    console.error(`[${roleName}] Delegation error:`, error);
+    throw error;
+  }
+}
+
+// =============================================================================
 // Supervisor Registration
 // =============================================================================
 
