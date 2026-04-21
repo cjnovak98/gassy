@@ -14,6 +14,7 @@ import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import yaml from "yaml";
+import fastifyStatic from "@fastify/static";
 
 // =============================================================================
 // System Prompts
@@ -190,6 +191,19 @@ async function createA2AServer(
 ): Promise<FastifyInstance> {
   const fastify = Fastify({
     logger: false,
+  });
+
+  // Ensure /app/artifacts directory exists for file serving
+  const artifactsDir = "/app/artifacts";
+  if (!existsSync(artifactsDir)) {
+    mkdirSync(artifactsDir, { recursive: true });
+  }
+
+  // Register static file serving for /files/* route
+  await fastify.register(fastifyStatic, {
+    root: artifactsDir,
+    prefix: "/files/",
+    decorateReply: false,
   });
 
   const agentCard: AgentCard = {

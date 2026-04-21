@@ -63,6 +63,9 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodeapp -u 1001
 
 WORKDIR /app
 
+# Create artifacts directory for file serving
+RUN mkdir -p /app/artifacts
+
 # Copy compiled output from builder
 COPY --from=builder --chown=nodeapp:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodeapp:nodejs /app/node_modules ./node_modules
