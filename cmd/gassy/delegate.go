@@ -108,7 +108,16 @@ func streamDelegate(ctx context.Context, client *a2a.Client, params a2a.SendMess
 		case "artifactUpdate":
 			fmt.Printf("[artifact] %s\n", event.Data)
 		case "textDelta":
-			fmt.Print(event.Data)
+			// Parse JSON to extract text field
+			var textMsg struct {
+				Kind      string `json:"kind"`
+				TextDelta string `json:"textDelta"`
+			}
+			if json.Unmarshal([]byte(event.Data), &textMsg) == nil {
+				fmt.Print(textMsg.TextDelta)
+			} else {
+				fmt.Print(event.Data)
+			}
 		default:
 			fmt.Printf("[%s] %s\n", event.Event, event.Data)
 		}

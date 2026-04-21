@@ -299,3 +299,64 @@ Webhook delivery is now integrated into the SSE streaming flow:
 ---
 
 *Last updated: 2026-04-21* (webhook reception added)
+
+---
+
+## 11. Important Corrections (2026-04-21)
+
+### Misconception Corrected: "Agents can't collaborate mid-task"
+
+**Previous claim**: "Agents communicate via request/response only, can't collaborate mid-task."
+
+**Correction**: This conflated protocol capability with implementation gaps. A2A has three interaction modes:
+
+1. **Synchronous request/response** - what gassy has
+2. **Streaming via SSE** - `TaskStatusUpdateEvent` + `TaskArtifactUpdateEvent` with `append`/`lastChunk` for chunked artifacts - **partially implemented** (textDelta works, artifacts not)
+3. **Push notifications** via webhooks - **not implemented**
+
+### What A2A Actually Supports (that gassy doesn't yet):
+
+- **Multi-turn within a task** - task can go to `input-required` state for genuine back-and-forth
+- **Streaming intermediate artifacts** via `TaskArtifactUpdateEvent` with `append: true`
+- **`contextId`** for grouping related tasks across longer workflows
+- **Delegation chains** (Agent A → B → C)
+
+### What A2A Omits By Design:
+
+- Shared mutable state between peers
+- Agents working on same task simultaneously as equals
+- Direct memory access between agents
+
+These omissions are the price of opacity - MCP standardizes execution primitives, A2A standardizes delegation between autonomous services.
+
+---
+
+## 12. Implementation Status vs Protocol Capability
+
+### What Gassy Has Implemented (✓)
+- AgentCard with skills advertisement
+- Task lifecycle states (working, completed, failed)
+- SSE streaming for textDelta events (true chunked streaming as of 2026-04-21)
+- Synchronous request/response via A2A
+- Agent discovery via supervisor registry
+- Delegation via `delegate_to_agent` tool
+
+### What Gassy Is Missing (✗)
+- `TaskArtifactUpdateEvent` with `append`/`lastChunk` for streaming intermediate artifacts
+- Task state `input-required` for multi-turn interactions
+- `contextId` for grouping related tasks
+- Push notifications via webhooks (webhook registration exists but delivery not integrated)
+- Proper artifact streaming (only textDelta is streamed, not artifact chunks)
+
+---
+
+## 13. Artifact Clarification
+
+A2A artifacts aren't pushed into a shared filesystem. The flow is:
+
+1. Agent A sends a task to Agent B
+2. Agent B works and emits `TaskArtifactUpdateEvent` over SSE (or webhook)
+3. Agent A receives artifacts as they're produced, can reassemble via `append`/`lastChunk`
+4. If Agent A needs Agent C to work on that artifact, it passes it inline as Parts in a new message
+
+Artifacts belong to a task and flow back to whoever initiated that task. No peer-to-peer artifact-push primitive exists because A2A is task-scoped by design.
