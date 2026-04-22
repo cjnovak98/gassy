@@ -15,14 +15,16 @@ import (
 var delegateCmd = &cobra.Command{
 	Use:   "delegate [agent-id] [prompt]",
 	Short: "Delegate work to an agent via A2A",
-	Long:  "Send a prompt to a specific agent and stream the response. Use --skill to find an agent by skill.",
+	Long:  "Send a prompt to a specific agent and stream the response. Use --skill to find an agent by skill. Use --task-id to continue a conversation.",
 	Args:  cobra.MinimumNArgs(1),
 	RunE:  runDelegate,
 }
 
 var delegateSkill string
+var delegateTaskID string
 
 func init() {
+	delegateCmd.Flags().StringVarP(&delegateTaskID, "task-id", "t", "", "Task ID (provide same ID to resume a conversation)")
 	delegateCmd.Flags().StringVarP(&delegateSkill, "skill", "k", "", "Find agent by skill instead of agent-id")
 	rootCmd.AddCommand(delegateCmd)
 }
@@ -92,6 +94,11 @@ func runDelegate(cmd *cobra.Command, args []string) error {
 		Stream:  true, // Always stream
 	}
 
+	// Use provided task ID - if not provided, agent generates one
+	if delegateTaskID != "" {
+		params.TaskID = delegateTaskID
+	}
+
 	return streamDelegate(ctx, client, params)
 }
 
@@ -101,6 +108,7 @@ func streamDelegate(ctx context.Context, client *a2a.Client, params a2a.SendMess
 		return fmt.Errorf("streaming message: %w", err)
 	}
 
+	var finalTaskID string
 	for event := range events {
 		switch event.Event {
 		case "statusUpdate":
@@ -118,11 +126,24 @@ func streamDelegate(ctx context.Context, client *a2a.Client, params a2a.SendMess
 			} else {
 				fmt.Print(event.Data)
 			}
+		case "done":
+			// Parse done event to extract taskId
+			var doneMsg struct {
+				Kind     string `json:"kind"`
+				TaskID   string `json:"taskId"`
+				SessionID string `json:"sessionId,omitempty"`
+			}
+			if json.Unmarshal([]byte(event.Data), &doneMsg) == nil {
+				finalTaskID = doneMsg.TaskID
+			}
 		default:
 			fmt.Printf("[%s] %s\n", event.Event, event.Data)
 		}
 	}
 	fmt.Println()
+	if finalTaskID != "" {
+		fmt.Printf("task-id: %s\n", finalTaskID)
+	}
 	return nil
 }
 
