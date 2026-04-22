@@ -126,15 +126,24 @@ func streamDelegate(ctx context.Context, client *a2a.Client, params a2a.SendMess
 			} else {
 				fmt.Print(event.Data)
 			}
-		case "done":
-			// Parse done event to extract taskId
-			var doneMsg struct {
-				Kind     string `json:"kind"`
-				TaskID   string `json:"taskId"`
-				SessionID string `json:"sessionId,omitempty"`
+		case "message":
+			// Handle plain text [done] marker from agent - task already completed
+			if event.Data == "[done]" {
+				break
 			}
-			if json.Unmarshal([]byte(event.Data), &doneMsg) == nil {
-				finalTaskID = doneMsg.TaskID
+			// Fall through to default for other message events
+			fmt.Printf("[message] %s\n", event.Data)
+		case "task":
+			// Parse task event to extract taskId
+			var taskMsg struct {
+				Kind    string `json:"kind"`
+				Task    struct {
+					ID       string `json:"id"`
+					SessionID string `json:"sessionId"`
+				} `json:"task"`
+			}
+			if json.Unmarshal([]byte(event.Data), &taskMsg) == nil {
+				finalTaskID = taskMsg.Task.ID
 			}
 		default:
 			fmt.Printf("[%s] %s\n", event.Event, event.Data)
