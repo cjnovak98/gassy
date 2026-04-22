@@ -8,13 +8,67 @@
  * Uses the Anthropic Agent SDK for API calls.
  */
 
-import { unstable_v2_prompt, unstable_v2_createSession, unstable_v2_resumeSession, type SDKSessionOptions } from "@anthropic-ai/claude-agent-sdk";
+import { unstable_v2_prompt, unstable_v2_createSession, unstable_v2_resumeSession, type SDKSessionOptions, type SDKSession } from "@anthropic-ai/claude-agent-sdk";
 import Fastify, { FastifyInstance } from "fastify";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import yaml from "yaml";
 import fastifyStatic from "@fastify/static";
+
+// =============================================================================
+// Session Registry - Per-Task Session Management
+// =============================================================================
+
+// Session registry to track taskId → sessionId mapping
+const sessionRegistry = new Map<string, SDKSession>();
+
+// Agent role for logging (set during initialization)
+let agentRole = "unknown";
+
+// SDK configuration (set during initialization)
+let sdkModel = "MiniMax-M2.7";
+let sdkEnv: Record<string, string | undefined> = {};
+
+// Create a new SDK session for a task
+function createTaskSession(taskId: string): SDKSession {
+  const session = unstable_v2_createSession({
+    model: sdkModel,
+    cwd: "/app",
+    settingSources: ["project"],
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    env: sdkEnv,
+  });
+  sessionRegistry.set(taskId, session);
+  console.log(`[${agentRole}] Created new session for task ${taskId}`);
+  return session;
+}
+
+// Resume an existing session for a task
+function getTaskSession(taskId: string): SDKSession | null {
+  return sessionRegistry.get(taskId) || null;
+}
+
+// Suspend a session (task waiting for input) - session stays in registry for later resume
+function suspendTask(taskId: string): void {
+  console.log(`[${agentRole}] Suspended session for task ${taskId} (awaiting input)`);
+  // Session remains in registry - will be resumed on follow-up
+}
+
+// Close and cleanup a session
+async function closeTaskSession(taskId: string): Promise<void> {
+  const session = sessionRegistry.get(taskId);
+  if (session) {
+    try {
+      session.close();
+      console.log(`[${agentRole}] Closed session for task ${taskId}`);
+    } catch (error) {
+      console.warn(`[${agentRole}] Error closing session for task ${taskId}:`, error);
+    }
+    sessionRegistry.delete(taskId);
+  }
+}
 
 // =============================================================================
 // System Prompts
@@ -194,7 +248,6 @@ interface A2AMessage {
 async function createA2AServer(
   port: number,
   agentRole: string,
-  session: Awaited<ReturnType<typeof unstable_v2_createSession>>,
   agentCard: AgentCard
 ): Promise<FastifyInstance> {
   const fastify = Fastify({
@@ -390,20 +443,20 @@ async function createA2AServer(
     try {
       // Extract message from params - handle both formats
       let messageText: string;
-      const params = body.params as any;
+      const requestParams = body.params as any;
 
-      if (typeof params.message === "string") {
-        messageText = params.message;
-      } else if (params.message && params.message.parts) {
-        const parts = params.message.parts as Array<{type: string; text: string}>;
+      if (typeof requestParams.message === "string") {
+        messageText = requestParams.message;
+      } else if (requestParams.message && requestParams.message.parts) {
+        const parts = requestParams.message.parts as Array<{type: string; text: string}>;
         messageText = parts.map((p) => p.text || "").join("");
-      } else if (params.message && params.message.content) {
-        messageText = params.message.content;
+      } else if (requestParams.message && requestParams.message.content) {
+        messageText = requestParams.message.content;
       } else {
-        messageText = JSON.stringify(params.message || params);
+        messageText = JSON.stringify(requestParams.message || requestParams);
       }
 
-      const context = params.context;
+      const context = requestParams.context;
 
       // Build conversation with context
       const systemPrompt = SYSTEM_PROMPTS[agentRole as keyof typeof SYSTEM_PROMPTS] || SYSTEM_PROMPTS.engineer;
@@ -423,8 +476,29 @@ async function createA2AServer(
           "Connection": "keep-alive",
         });
 
-        const sessionId = `session-${body.id}`;
-        const taskId = `task-${body.id}`;
+        // Extract or generate taskId and sessionId
+        const streamingParams = body.params as any;
+        const taskId = streamingParams?.taskId || `task-${body.id}`;
+        const incomingSessionId = streamingParams?.sessionId;
+
+        // Check if this is a follow-up (session already exists)
+        let session = getTaskSession(taskId);
+
+        if (!session) {
+          // NEW TASK: create a new session
+          session = createTaskSession(taskId);
+        } else {
+          // FOLLOW-UP: resume existing session
+          console.log(`[${agentRole}] Resuming session for task ${taskId}`);
+        }
+
+        // Get session ID - may not be available until after first send
+        let sessionId: string;
+        try {
+          sessionId = (session as any).sessionId || taskId;
+        } catch {
+          sessionId = taskId;
+        }
 
         // Send initial task event with working state
         const taskEvent = {
@@ -444,6 +518,7 @@ async function createA2AServer(
         let finalMessage = "";
         let eventCount = 0;
         let hasContent = false;
+        let taskState = "completed";
 
         try {
           for await (const msg of session.stream()) {
@@ -487,31 +562,77 @@ async function createA2AServer(
           }
         } catch (err) {
           console.error(`[${agentRole}] Stream error:`, err);
+          taskState = "failed";
         }
 
         console.log(`[${agentRole}] Stream complete. Total events: ${eventCount}, final message length: ${finalMessage.length}`);
 
+        // Check for input-required marker in the response
+        const needsUserInput = finalMessage.includes("[INPUT_REQUIRED]");
+        if (needsUserInput) {
+          taskState = "input-required";
+          suspendTask(taskId);  // Keep session alive for later resume
+        } else if (!finalMessage) {
+          taskState = "failed";
+        }
+
         // Send completion event with final status
+        // Use sessionId that was obtained after send() if available
+        let finalSessionId: string;
+        try {
+          finalSessionId = (session as any).sessionId || sessionId || taskId;
+        } catch {
+          finalSessionId = taskId;
+        }
         const doneEvent = {
           kind: "completion",
           completion: {
             id: taskId,
-            sessionId: sessionId,
+            sessionId: finalSessionId,
             message: finalMessage,
-            status: { state: finalMessage ? "completed" : "failed" },
+            status: { state: taskState },
           },
         };
         reply.raw?.write(`data: ${JSON.stringify(doneEvent)}\n\n`);
         reply.raw?.write(`data: [done]\n\n`);
         reply.raw?.end();
 
+        // If task completed or failed, close the session
+        if (taskState === "completed" || taskState === "failed") {
+          await closeTaskSession(taskId);
+        }
+
         return null;
       }
 
-      // Non-streaming response - send message then collect response via stream
+      // Non-streaming response
+      const nonStreamingParams = body.params as any;
+      const taskId = nonStreamingParams?.taskId || `task-${body.id}`;
+
+      // Check if this is a follow-up (session already exists)
+      let session = getTaskSession(taskId);
+
+      if (!session) {
+        // NEW TASK: create a new session
+        session = createTaskSession(taskId);
+      } else {
+        // FOLLOW-UP: resume existing session
+        console.log(`[${agentRole}] Resuming session for task ${taskId}`);
+      }
+
+      // Get session ID safely - may not be available until after send
+      let sessionId: string;
+      try {
+        sessionId = (session as any).sessionId || taskId;
+      } catch {
+        sessionId = taskId;
+      }
+
+      // Send message and collect response via stream
       await session.send(fullMessage);
 
       let responseText = "";
+      let taskState = "completed";
       try {
         for await (const msg of session.stream()) {
           // Handle result message - contains the final response text
@@ -536,15 +657,31 @@ async function createA2AServer(
         }
       } catch (err) {
         console.error(`[${agentRole}] Stream error:`, err);
+        taskState = "failed";
+      }
+
+      // Check for input-required marker
+      const needsUserInput = responseText.includes("[INPUT_REQUIRED]");
+      if (needsUserInput) {
+        taskState = "input-required";
+        suspendTask(taskId);  // Keep session alive for later resume
+      } else if (!responseText) {
+        taskState = "failed";
+      }
+
+      // If task completed or failed, close the session
+      if (taskState === "completed" || taskState === "failed") {
+        await closeTaskSession(taskId);
       }
 
       return {
         jsonrpc: "2.0",
         id: body.id,
         result: {
-          id: `task-${body.id}`,
-          state: "completed",
-          status: { state: "completed" },
+          id: taskId,
+          state: taskState,
+          status: { state: taskState },
+          sessionId: sessionId,
           message: { role: "agent", parts: [{ type: "text", text: responseText }] },
         },
       };
@@ -799,8 +936,12 @@ async function main() {
     process.exit(1);
   }
 
-  // Build environment variables for the SDK
-  const sdkEnv: Record<string, string | undefined> = {
+  // Set global agent role for logging
+  agentRole = env.AGENT_ROLE;
+
+  // Set global SDK configuration
+  sdkModel = env.ANTHROPIC_MODEL;
+  sdkEnv = {
     ANTHROPIC_AUTH_TOKEN: env.ANTHROPIC_AUTH_TOKEN,
   };
   if (env.ANTHROPIC_BASE_URL) {
@@ -829,18 +970,6 @@ async function main() {
   // Generate CLAUDE.md from config before creating session
   await generateCLAUDEMd(env.AGENT_ROLE, configDir);
 
-  // Create persistent session using unstable_v2_createSession
-  const session = await unstable_v2_createSession({
-    model: env.ANTHROPIC_MODEL,
-    cwd: "/app",
-    settingSources: ["project"],  // Enable CLAUDE.md loading
-    permissionMode: "bypassPermissions",
-    allowDangerouslySkipPermissions: true,
-    env: sdkEnv,
-  });
-
-  console.log(`Session created for ${env.AGENT_ROLE} agent`);
-
   // Build agent card for registration and server
   const agentCard: AgentCard = {
     name: env.AGENT_ROLE,
@@ -867,8 +996,8 @@ async function main() {
   // Register with supervisor
   await registerWithSupervisor(env.SUPERVISOR_URL, env.AGENT_ROLE, env.PORT, agentCard.skills);
 
-  // Start A2A server with the persistent session
-  const server = await createA2AServer(env.PORT, env.AGENT_ROLE, session, agentCard);
+  // Start A2A server (session registry will be passed, not a single session)
+  const server = await createA2AServer(env.PORT, env.AGENT_ROLE, agentCard);
 
   // Mayor gets a web UI on PORT+1 (disabled for now to avoid port conflicts)
   // if (env.AGENT_ROLE === "mayor") {
@@ -877,13 +1006,22 @@ async function main() {
 
   console.log(`Agent "${env.AGENT_ROLE}" is ready and listening on port ${env.PORT}`);
 
-  // Handle graceful shutdown
+  // Handle graceful shutdown - close all task sessions
   const shutdown = async () => {
     console.log("Shutting down...");
     try {
-      await session.close();
+      // Close all sessions in the registry
+      for (const [taskId, session] of sessionRegistry) {
+        try {
+          session.close();
+          console.log(`[${env.AGENT_ROLE}] Closed session for task ${taskId}`);
+        } catch (error) {
+          console.warn(`[${env.AGENT_ROLE}] Error closing session for task ${taskId}:`, error);
+        }
+      }
+      sessionRegistry.clear();
     } catch (error) {
-      console.warn("Error closing session:", error);
+      console.warn("Error during shutdown:", error);
     }
     await server.close();
     process.exit(0);

@@ -130,6 +130,7 @@ func startSupervisor(cityDir string) error {
 		"--env-file", envFile,
 		"--security-opt", "label=disable",
 		"localhost:5000/gassy/supervisor:latest",
+		"/etc/gassy/city.toml",
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
